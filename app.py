@@ -1,5 +1,5 @@
 from flask import Flask, render_template, jsonify
-import your_confluence_module  # whatever you use to get confluence data
+from twelve import get_confluence  # <- must match your file name
 
 app = Flask(__name__)
 
@@ -9,13 +9,7 @@ def home():
 
 @app.route("/confluence")
 def confluence_data():
-    # Example: return JSON in the structure your JS expects
-    data = your_confluence_module.get_confluence()  
-    # Example format:
-    # [
-    #   {"Pair": "EURUSD=X", "Confluence": {"Weekly": "Strong Bullish", "Daily": "Bullish", ...}},
-    #   ...
-    # ]
+    data = get_confluence()
     return jsonify(data)
 
 if __name__ == "__main__":
