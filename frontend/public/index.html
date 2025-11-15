@@ -5,79 +5,159 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Forex Confluence Dashboard</title>
 <style>
-body { font-family: Arial, sans-serif; background: #1e1e2f; color: #eee; margin: 0; padding: 0;}
-.container { padding: 20px; }
-button { margin: 5px; padding: 10px; border: none; border-radius: 5px; background: #444; color: #fff; cursor: pointer; }
-button:hover { background: #666; }
-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-th, td { padding: 10px; text-align: center; border-bottom: 1px solid #555; }
-th { background: #333; }
-tr:hover { background: #2a2a3d; }
-.sparkline { width: 100px; height: 20px; }
+  body {
+    font-family: Arial, sans-serif;
+    background: #121212;
+    color: #eee;
+    margin: 0;
+    padding: 20px;
+  }
+
+  h1 {
+    text-align: center;
+    margin-bottom: 20px;
+    letter-spacing: 1px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 30px;
+    font-size: 16px;
+  }
+
+  th, td {
+    padding: 10px;
+    border: 1px solid #333;
+    text-align: center;
+  }
+
+  th {
+    background: #1e1e1e;
+  }
+
+  .trend {
+    padding: 6px 12px;
+    border-radius: 6px;
+    color: #fff;
+    font-weight: bold;
+  }
+
+  .Strong-Bullish { background-color: #006400; }
+  .Bullish { background-color: #00c000; }
+  .Strong-Bearish { background-color: #8b0000; }
+  .Bearish { background-color: #ff4500; }
+
+  .BOS-up::after {
+    content: " ⬆";
+    margin-left: 5px;
+  }
+
+  .BOS-down::after {
+    content: " ⬇";
+    margin-left: 5px;
+  }
+
+  .confluence-bar {
+    height: 20px;
+    border-radius: 5px;
+    background: #555;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .confluence-fill {
+    height: 100%;
+    background: #00c000;
+    width: 0%;
+    transition: width 0.5s ease;
+  }
 </style>
 </head>
 <body>
-<div class="container">
+
 <h1>Forex Confluence Dashboard</h1>
-<div>
-<button onclick="filterCategory('All')">All</button>
-<button onclick="filterCategory('Majors')">Majors</button>
-<button onclick="filterCategory('Minors')">Minors</button>
-<button onclick="filterCategory('Exotics')">Exotics</button>
-<button onclick="filterCategory('Commodities')">Gold</button>
-<button onclick="filterCategory('Indices')">Indices</button>
-</div>
+
 <table>
-<thead>
-<tr>
-<th>Pair</th>
-<th>Category</th>
-<th>Weekly</th>
-<th>Daily</th>
-<th>H4</th>
-<th>H1</th>
-<th>% Confluence</th>
-<th>Chart</th>
-</tr>
-</thead>
-<tbody id="table-body">
-</tbody>
+  <thead>
+    <tr>
+      <th>Pair</th>
+      <th>Weekly</th>
+      <th>Daily</th>
+      <th>H4</th>
+      <th>H1</th>
+      <th>Confluence %</th>
+    </tr>
+  </thead>
+  <tbody id="confluence-table-body">
+  </tbody>
 </table>
-</div>
+
 <script>
-async function loadData() {
-    const res = await fetch('/confluence');
-    const data = await res.json();
-    const tbody = document.getElementById('table-body');
-    tbody.innerHTML = '';
-    data.forEach(item => {
-        const row = document.createElement('tr');
-        row.dataset.category = item.category;
-        row.innerHTML = `
-            <td>${item.pair}</td>
-            <td>${item.category}</td>
-            <td>${item.trends.weekly || '—'}</td>
-            <td>${item.trends.daily || '—'}</td>
-            <td>${item.trends.h4 || '—'}</td>
-            <td>${item.trends.h1 || '—'}</td>
-            <td>${item.confluence_percent}%</td>
-            <td>${item.chart ? `<img class="sparkline" src="${item.chart}">` : '—'}</td>
-        `;
-        tbody.appendChild(row);
-    });
+const API_URL = "/confluence";
+
+function mapTrendClass(text) {
+  if (!text) return '';
+  if (text.includes("Strong Bullish")) return "Strong-Bullish";
+  if (text.includes("Bullish")) return "Bullish";
+  if (text.includes("Strong Bearish")) return "Strong-Bearish";
+  if (text.includes("Bearish")) return "Bearish";
+  return "";
 }
 
-// Filters
-function filterCategory(cat) {
-    const rows = document.querySelectorAll('tbody tr');
-    rows.forEach(r => {
-        r.style.display = cat === 'All' || r.dataset.category === cat ? '' : 'none';
-    });
+function bosClass(text) {
+  if (!text) return "";
+  if (text.includes("BOS_up")) return "BOS-up";
+  if (text.includes("BOS_down")) return "BOS-down";
+  return "";
 }
 
-// Auto-refresh every 60 seconds
-loadData();
-setInterval(loadData, 60000);
+async function loadConfluence() {
+  const res = await fetch(API_URL);
+  const data = await res.json();
+  const tbody = document.getElementById("confluence-table-body");
+  tbody.innerHTML = "";
+
+  data.forEach(pair => {
+    const row = document.createElement("tr");
+    row.innerHTML = `<td>${pair.Pair.replace("=X", "")}</td>`;
+
+    let confluenceScore = 0;
+
+    ["Weekly", "Daily", "H4", "H1"].forEach(tf => {
+      const val = pair.Confluence[tf] || "N/A";
+      const cell = document.createElement("td");
+
+      cell.textContent = val.replace(/ \(.*\)/, "");
+      cell.className =
+        "trend " +
+        mapTrendClass(val) +
+        " " +
+        bosClass(val);
+
+      if (val.includes("Bullish") || val.includes("Bearish")) {
+        confluenceScore++;
+      }
+      row.appendChild(cell);
+    });
+
+    const percent = Math.round((confluenceScore / 4) * 100);
+
+    const percentCell = document.createElement("td");
+    percentCell.innerHTML = `
+      <div class="confluence-bar">
+        <div class="confluence-fill" style="width: ${percent}%"></div>
+      </div>
+      ${percent}%
+    `;
+
+    row.appendChild(percentCell);
+    tbody.appendChild(row);
+  });
+}
+
+loadConfluence();
 </script>
+
 </body>
 </html>

@@ -10,7 +10,8 @@ RUN apt-get update && \
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Render exposes the port using environment variable $PORT
+# Local testing will use 5000
 EXPOSE 5000
 
-CMD gunicorn app:app --bind 0.0.0.0:${PORT}
+# Render uses $PORT, local uses 5000
+CMD ["bash", "-c", "gunicorn app:app --bind 0.0.0.0:${PORT:-5000}"]
