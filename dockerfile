@@ -6,7 +6,7 @@ WORKDIR /usr/src/app
 # Copy project files
 COPY . .
 
-# Install system dependencies (safe for all scientific Python packages)
+# Install system dependencies
 RUN apt-get update && \
     apt-get install -y build-essential gfortran libopenblas-dev liblapack-dev && \
     rm -rf /var/lib/apt/lists/*
@@ -17,8 +17,8 @@ RUN pip install --upgrade pip
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose app port
+# Render will assign the port
 EXPOSE 5000
 
-# Run Flask app with gunicorn
-CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:5000"]
+# Run Flask app using the Render PORT (NOT hardcoded)
+CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:${PORT}"]
