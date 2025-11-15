@@ -44,7 +44,6 @@ def get_confluence():
             h4_trend = get_trend(h4)
             h1_trend = get_trend(h1)
 
-            # Confluence logic
             if w_trend == d_trend == h4_trend == h1_trend and w_trend is not None:
                 status = f"✅ Strong {w_trend}"
             elif any([w_trend, d_trend, h4_trend, h1_trend]):
