@@ -6,12 +6,14 @@ import pandas as pd
 app = Flask(__name__)
 CORS(app)
 
+# Currency pairs to track
 pairs = [
     "EURUSD=X", "GBPJPY=X", "USDCHF=X", "AUDUSD=X",
     "USDCAD=X", "NZDUSD=X", "EURJPY=X", "GBPUSD=X"
 ]
 
 def clean_df(df):
+    """Cleans the DataFrame and flattens multi-index columns if necessary."""
     if df is None or df.empty:
         return pd.DataFrame()
     if isinstance(df.columns, pd.MultiIndex):
@@ -19,6 +21,7 @@ def clean_df(df):
     return df
 
 def get_trend(data, ema_period=200):
+    """Calculates trend based on EMA and last close price."""
     if data is None or data.empty or "Close" not in data.columns:
         return None
     data['EMA'] = data['Close'].ewm(span=ema_period, adjust=False).mean()
@@ -31,19 +34,23 @@ def get_trend(data, ema_period=200):
 
 @app.route("/confluence", methods=["GET"])
 def get_confluence():
+    """Returns JSON with trend confluence for all pairs."""
     results = []
     for symbol in pairs:
         try:
+            # Download data
             weekly = clean_df(yf.download(symbol, period="1y", interval="1wk", progress=False))
             daily = clean_df(yf.download(symbol, period="3mo", interval="1d", progress=False))
             h4 = clean_df(yf.download(symbol, period="1mo", interval="4h", progress=False))
             h1 = clean_df(yf.download(symbol, period="1mo", interval="1h", progress=False))
 
+            # Calculate trends
             w_trend = get_trend(weekly)
             d_trend = get_trend(daily)
             h4_trend = get_trend(h4)
             h1_trend = get_trend(h1)
 
+            # Determine confluence
             if w_trend == d_trend == h4_trend == h1_trend and w_trend is not None:
                 status = f"✅ Strong {w_trend}"
             elif any([w_trend, d_trend, h4_trend, h1_trend]):
@@ -69,7 +76,5 @@ def get_confluence():
     return jsonify(results)
 
 if __name__ == "__main__":
+    # Render requires host="0.0.0.0" to expose externally
     app.run(debug=True, host="0.0.0.0", port=5000)
-git add .
-git commit -m "Update app"
-git push origin main
