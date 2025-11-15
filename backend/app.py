@@ -1,14 +1,21 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template
 from flask_cors import CORS
 import yfinance as yf
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import io
+import base64
 
 app = Flask(__name__)
 CORS(app)
 
+# Currency pairs + gold + indices
 pairs = [
-    "EURUSD=X", "GBPJPY=X", "USDCHF=X", "AUDUSD=X",
-    "USDCAD=X", "NZDUSD=X", "EURJPY=X", "GBPUSD=X"
+    "EURUSD=X","GBPUSD=X","USDJPY=X","USDCHF=X","AUDUSD=X","USDCAD=X","NZDUSD=X",
+    "EURJPY=X","GBPJPY=X","AUDJPY=X","GBPCHF=X","XAUUSD=X", # Gold
+    "^GSPC","^DJI","^IXIC" # Indices
 ]
 
 def clean_df(df):
@@ -29,7 +36,22 @@ def get_trend(data, ema_period=200):
     else:
         return "Sideways"
 
-@app.route("/confluence", methods=["GET"])
+def generate_chart(symbol):
+    df = clean_df(yf.download(symbol, period="1mo", interval="1d", progress=False))
+    if df.empty:
+        return None
+    plt.figure(figsize=(5,2))
+    plt.plot(df.index, df['Close'], label='Close')
+    plt.title(symbol.replace("=X",""))
+    plt.legend()
+    plt.tight_layout()
+    img = io.BytesIO()
+    plt.savefig(img, format='png')
+    plt.close()
+    img.seek(0)
+    return base64.b64encode(img.getvalue()).decode()
+
+@app.route("/confluence")
 def get_confluence():
     results = []
     for symbol in pairs:
@@ -39,34 +61,35 @@ def get_confluence():
             h4 = clean_df(yf.download(symbol, period="1mo", interval="4h", progress=False))
             h1 = clean_df(yf.download(symbol, period="1mo", interval="1h", progress=False))
 
-            w_trend = get_trend(weekly)
-            d_trend = get_trend(daily)
-            h4_trend = get_trend(h4)
-            h1_trend = get_trend(h1)
+            trends = [get_trend(weekly), get_trend(daily), get_trend(h4), get_trend(h1)]
+            percent_confluence = len([t for t in trends if t is not None and t == trends[0]]) / 4 * 100
 
-            if w_trend == d_trend == h4_trend == h1_trend and w_trend is not None:
-                status = f"✅ Strong {w_trend}"
-            elif any([w_trend, d_trend, h4_trend, h1_trend]):
-                status = "⚠️ Partial Confluence"
+            if all(t == trends[0] and t is not None for t in trends):
+                status = f"✅ Strong {trends[0]}"
+            elif any(t is not None for t in trends):
+                status = f"⚠️ Partial Confluence ({percent_confluence:.0f}%)"
             else:
                 status = "❌ No Data"
 
-            results.append({
-                "pair": symbol.replace("=X", ""),
-                "weekly": w_trend,
-                "daily": d_trend,
-                "h4": h4_trend,
-                "h1": h1_trend,
-                "status": status
-            })
+            chart = generate_chart(symbol)
 
+            results.append({
+                "pair": symbol.replace("=X",""),
+                "weekly": trends[0],
+                "daily": trends[1],
+                "h4": trends[2],
+                "h1": trends[3],
+                "percent_confluence": percent_confluence,
+                "status": status,
+                "chart": chart
+            })
         except Exception as e:
-            results.append({
-                "pair": symbol.replace("=X", ""),
-                "status": f"Error: {str(e)}"
-            })
-
+            results.append({"pair": symbol.replace("=X",""), "status": f"Error: {str(e)}"})
     return jsonify(results)
+
+@app.route("/")
+def index():
+    return render_template("index.html")
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)

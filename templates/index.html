@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Forex Trend Confluence</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: Arial, sans-serif; background: #1e1e2f; color: #f0f0f0; margin: 0; padding: 0;}
+        header { padding: 1rem; background: #2c2c3e; text-align: center; font-size: 1.8rem; font-weight: bold; }
+        main { padding: 1rem; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { padding: 0.5rem; text-align: center; border: 1px solid #444; }
+        th { background: #3b3b5c; }
+        tr:nth-child(even) { background: #2a2a40; }
+        tr:hover { background: #444466; }
+        .status-strong { color: #00ff00; font-weight: bold; }
+        .status-partial { color: #ffff00; font-weight: bold; }
+        .status-none { color: #ff5555; font-weight: bold; }
+        select, button { padding: 0.5rem; margin: 0.5rem; font-size: 1rem; }
+        img.chart { max-width: 150px; height: auto; }
+    </style>
+</head>
+<body>
+    <header>Forex Trend Confluence Dashboard</header>
+    <main>
+        <div>
+            <label for="filter-status">Filter by status:</label>
+            <select id="filter-status">
+                <option value="all">All</option>
+                <option value="strong">Strong ✅</option>
+                <option value="partial">Partial ❌</option>
+                <option value="none">No Data ❌</option>
+            </select>
+            <button onclick="refreshData()">Refresh Now</button>
+        </div>
+        <table id="confluence-table">
+            <thead>
+                <tr>
+                    <th>Pair</th>
+                    <th>Weekly</th>
+                    <th>Daily</th>
+                    <th>H4</th>
+                    <th>H1</th>
+                    <th>% Confluence</th>
+                    <th>Status</th>
+                    <th>Chart</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </main>
+
+    <script>
+        async function fetchConfluence() {
+            try {
+                const res = await fetch('/confluence');
+                const data = await res.json();
+                renderTable(data);
+            } catch (e) {
+                console.error("Error fetching data:", e);
+            }
+        }
+
+        function renderTable(data) {
+            const tbody = document.querySelector("#confluence-table tbody");
+            tbody.innerHTML = "";
+            const filter = document.getElementById("filter-status").value;
+
+            data.forEach(item => {
+                let statusClass = "status-none";
+                if (item.status.includes("Strong")) statusClass = "status-strong";
+                else if (item.status.includes("Partial")) statusClass = "status-partial";
+
+                if (filter !== "all") {
+                    if ((filter === "strong" && statusClass !== "status-strong") ||
+                        (filter === "partial" && statusClass !== "status-partial") ||
+                        (filter === "none" && statusClass !== "status-none")) return;
+                }
+
+                const row = document.createElement("tr");
+                row.innerHTML = `
+                    <td>${item.pair}</td>
+                    <td>${item.weekly || "-"}</td>
+                    <td>${item.daily || "-"}</td>
+                    <td>${item.h4 || "-"}</td>
+                    <td>${item.h1 || "-"}</td>
+                    <td>${item.percent_confluence?.toFixed(0) || 0}%</td>
+                    <td class="${statusClass}">${item.status}</td>
+                    <td>${item.chart ? `<img class="chart" src="data:image/png;base64,${item.chart}" />` : "-"}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function refreshData() {
+            fetchConfluence();
+        }
+
+        // Auto-refresh every 60 seconds
+        setInterval(fetchConfluence, 60000);
+        window.onload = fetchConfluence;
+    </script>
+</body>
+</html>
