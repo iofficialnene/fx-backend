@@ -1,5 +1,5 @@
 from flask import Flask, render_template, jsonify
-from twelve import get_confluence  # <- must match your file name
+from twelve import get_confluence
 
 app = Flask(__name__)
 

@@ -5,71 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Forex Confluence Dashboard</title>
 <style>
-  body {
-    font-family: Arial, sans-serif;
-    background: #121212;
-    color: #eee;
-    margin: 0;
-    padding: 20px;
-  }
-
-  h1 {
-    text-align: center;
-    margin-bottom: 20px;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 30px;
-  }
-
-  th, td {
-    padding: 10px;
-    border: 1px solid #333;
-    text-align: center;
-  }
-
-  th {
-    background: #1e1e1e;
-  }
-
-  .trend {
-    padding: 5px 10px;
-    border-radius: 5px;
-    color: #fff;
-    font-weight: bold;
-  }
-
-  .Strong-Bullish { background-color: #006400; } /* dark green */
-  .Bullish { background-color: #00c000; } /* light green */
-  .Strong-Bearish { background-color: #8b0000; } /* dark red */
-  .Bearish { background-color: #ff4500; } /* light red */
-
-  .BOS-up::after {
-    content: "⬆";
-    margin-left: 5px;
-  }
-
-  .BOS-down::after {
-    content: "⬇";
-    margin-left: 5px;
-  }
-
-  .confluence-bar {
-    height: 20px;
-    border-radius: 5px;
-    background: #555;
-    position: relative;
-  }
-
-  .confluence-fill {
-    height: 100%;
-    border-radius: 5px;
-    background: #00c000;
-    width: 0%;
-    transition: width 0.5s;
-  }
+body { font-family: Arial; background: #121212; color: #eee; padding: 20px; }
+h1 { text-align: center; margin-bottom: 20px; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+th, td { padding: 10px; border: 1px solid #333; text-align: center; }
+th { background: #1e1e1e; }
+.trend { padding: 5px 10px; border-radius: 5px; color: #fff; font-weight: bold; }
+.Strong-Bullish { background-color: #006400; }
+.Bullish { background-color: #00c000; }
+.Strong-Bearish { background-color: #8b0000; }
+.Bearish { background-color: #ff4500; }
+.confluence-bar { height: 20px; border-radius: 5px; background: #555; position: relative; }
+.confluence-fill { height: 100%; border-radius: 5px; background: #00c000; width: 0%; transition: width 0.5s; }
 </style>
 </head>
 <body>
@@ -86,67 +33,51 @@
       <th>Confluence %</th>
     </tr>
   </thead>
-  <tbody id="confluence-table-body">
-    <!-- Rows will be injected here by JS -->
-  </tbody>
+  <tbody id="confluence-table-body"></tbody>
 </table>
 
 <script>
-const API_URL = "http://localhost:5000/confluence";
-
-function mapTrendClass(trendText) {
-  if (!trendText) return '';
-  if (trendText.includes('Strong Bullish')) return 'Strong-Bullish';
-  if (trendText.includes('Bullish')) return 'Bullish';
-  if (trendText.includes('Strong Bearish')) return 'Strong-Bearish';
-  if (trendText.includes('Bearish')) return 'Bearish';
-  return '';
-}
-
-function mapBOSClass(trendText) {
-  if (!trendText) return '';
-  if (trendText.includes('BOS_up')) return 'BOS-up';
-  if (trendText.includes('BOS_down')) return 'BOS-down';
-  return '';
-}
-
 async function loadConfluence() {
-  const res = await fetch(API_URL);
-  const data = await res.json();
-  const tbody = document.getElementById('confluence-table-body');
-  tbody.innerHTML = '';
+    try {
+        const res = await fetch("/confluence");
+        const data = await res.json();
+        const tbody = document.getElementById('confluence-table-body');
+        tbody.innerHTML = '';
 
-  data.forEach(pairData => {
-    const row = document.createElement('tr');
-    row.innerHTML = `<td>${pairData.Pair.replace('=X','')}</td>`;
+        data.forEach(pairData => {
+            const row = document.createElement('tr');
+            row.innerHTML = `<td>${pairData.Pair.replace('=X','')}</td>`;
 
-    let confluenceCount = 0;
-    let total = 0;
+            let confluenceCount = 0;
+            let total = 0;
 
-    for (const tf of ['Weekly', 'Daily', 'H4', 'H1']) {
-      const cell = document.createElement('td');
-      const val = pairData.Confluence[tf] || '';
-      cell.textContent = val.replace(/ \(.*\)/,''); // only trend text
-      cell.className = 'trend ' + mapTrendClass(val) + ' ' + mapBOSClass(val);
+            ['Weekly','Daily','H4','H1'].forEach(tf => {
+                const val = pairData.Confluence[tf] || '';
+                const cell = document.createElement('td');
+                cell.textContent = val;
+                cell.className = 'trend ' +
+                    (val.includes('Strong Bullish') ? 'Strong-Bullish' :
+                     val.includes('Bullish') ? 'Bullish' :
+                     val.includes('Strong Bearish') ? 'Strong-Bearish' :
+                     val.includes('Bearish') ? 'Bearish' : '');
+                row.appendChild(cell);
 
-      row.appendChild(cell);
+                if(val.includes('Bullish') || val.includes('Bearish')) confluenceCount++;
+                total++;
+            });
 
-      if (val.includes('Bullish') || val.includes('Bearish')) confluenceCount++;
-      total++;
+            const percent = Math.round((confluenceCount/total)*100);
+            const percentCell = document.createElement('td');
+            percentCell.innerHTML = `<div class="confluence-bar">
+                <div class="confluence-fill" style="width: ${percent}%"></div>
+            </div>${percent}%`;
+            row.appendChild(percentCell);
+
+            tbody.appendChild(row);
+        });
+    } catch(err) {
+        console.error("Failed to load confluence data:", err);
     }
-
-    const confluencePercent = Math.round((confluenceCount / total) * 100);
-    const percentCell = document.createElement('td');
-    percentCell.innerHTML = `
-      <div class="confluence-bar">
-        <div class="confluence-fill" style="width: ${confluencePercent}%"></div>
-      </div>
-      ${confluencePercent}%
-    `;
-    row.appendChild(percentCell);
-
-    tbody.appendChild(row);
-  });
 }
 
 loadConfluence();
