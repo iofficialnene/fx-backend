@@ -1,17 +1,18 @@
-FROM python:3.11-bullseye
+# Use official Python image
+FROM python:3.11-slim
 
-WORKDIR /usr/src/app
-COPY . .
+# Set working directory
+WORKDIR /app
 
-RUN apt-get update && \
-    apt-get install -y build-essential gfortran libopenblas-dev liblapack-dev && \
-    rm -rf /var/lib/apt/lists/*
-
-RUN pip install --upgrade pip
+# Copy requirements and install dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Local testing will use 5000
+# Copy all app files
+COPY . .
+
+# Expose the port Flask runs on
 EXPOSE 5000
 
-# Render uses $PORT, local uses 5000
-CMD ["bash", "-c", "gunicorn app:app --bind 0.0.0.0:${PORT:-5000}"]
+# Start the app
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "app:app"]
