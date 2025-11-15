@@ -1,0 +1,91 @@
+/* App.css - full styles */
+:root{
+  --bg-dark: #0f172a;
+  --card-dark: #0f172a;
+  --panel: #0f172a;
+  --muted: #94a3b8;
+  --accent: #38bdf8;
+}
+
+/* layout */
+.app {
+  min-height: 100vh;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  padding: 18px;
+  background: linear-gradient(180deg,#071024 0%, #0b1220 100%);
+  color: #e6eef8;
+}
+.app.light {
+  background: linear-gradient(180deg,#f7fbff 0%, #f1f5f9 100%);
+  color: #0b1220;
+}
+
+/* topbar */
+.topbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:14px;
+}
+.topbar h1 { margin:0; font-size:1.3rem; letter-spacing:0.4px}
+.controls { display:flex; gap:8px; align-items:center}
+.session { font-size:0.9rem; color:var(--accent)}
+
+/* switch */
+.switch { position: relative; display:inline-block; width:44px; height:24px}
+.switch input { display:none }
+.slider { position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:#374151; border-radius:24px }
+.slider:before { position:absolute; content:''; height:18px; width:18px; left:3px; bottom:3px; background:white; border-radius:50%; transition:0.2s }
+.switch input:checked + .slider { background:#10b981 }
+.switch input:checked + .slider:before { transform: translateX(20px) }
+
+/* toolbar */
+.toolbar { display:flex; justify-content:space-between; gap:10px; align-items:center; margin:12px 0 18px}
+.toolbar .left { display:flex; gap:8px; align-items:center}
+.toolbar select, .toolbar .search { padding:8px 10px; border-radius:8px; border:none; background:#0b1220; color:inherit;}
+.app.light .toolbar select, .app.light .toolbar .search { background:#fff; color:#111; border:1px solid #ddd}
+.toolbar .right { display:flex; gap:8px; align-items:center}
+.toolbar .btn { padding:8px 12px; border-radius:8px; background:#2563eb; color:#fff; border:none; cursor:pointer}
+
+/* grid */
+.grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:14px; margin-top:10px; }
+.card {
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.15));
+  padding:14px; border-radius:12px; box-shadow:0 6px 18px rgba(2,6,23,0.5); border:1px solid rgba(255,255,255,0.03);
+  transition:transform .15s ease, box-shadow .15s ease;
+}
+.app.light .card { background:#fff; color:#111; box-shadow: 0 4px 8px rgba(16,24,40,0.05); border:1px solid #f0f4f8 }
+.card:hover { transform: translateY(-6px); box-shadow:0 10px 30px rgba(2,6,23,0.6)}
+
+/* card pieces */
+.cardTop { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px }
+.pair { font-weight:700; font-size:1.05rem }
+.badge { background:#0ea5a4; color:#022; padding:6px 8px; border-radius:8px; font-weight:700; font-size:0.85rem }
+
+/* status */
+.statusRow { margin-bottom:8px }
+.status { font-weight:700 }
+
+/* trend row */
+.tfRow { display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap }
+.tf { padding:4px 8px; border-radius:6px; background:rgba(255,255,255,0.02); font-size:0.85rem; }
+.tf.bull { border:1px solid rgba(16,185,129,0.12) }
+.tf.bear { border:1px solid rgba(239,68,68,0.12) }
+
+/* sparkline */
+.spark { height:48px; display:flex; align-items:center; justify-content:center }
+
+/* loader */
+.loaderWrap { display:flex; justify-content:center; margin:40px 0 }
+.loader { border:6px solid rgba(255,255,255,0.06); border-top-color: #38bdf8; border-radius:50%; width:56px; height:56px; animation:spin 1s linear infinite }
+@keyframes spin { to { transform:rotate(360deg) } }
+
+/* footer */
+.footer { margin-top:20px; text-align:center; color:var(--muted) }
+
+/* responsive */
+@media (max-width:720px) {
+  .toolbar { flex-direction:column; align-items:stretch }
+  .toolbar .right { justify-content:flex-start }
+}
