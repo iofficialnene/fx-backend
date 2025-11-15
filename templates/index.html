@@ -1,105 +1,156 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Forex Confluence Dashboard</title>
-    <style>
-        body { font-family: Arial, sans-serif; background: #121212; color: #eee; }
-        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-        th, td { border: 1px solid #444; padding: 8px; text-align: center; }
-        th { background-color: #333; }
-        tr:nth-child(even) { background-color: #1e1e1e; }
-        button { margin: 5px; padding: 5px 10px; background: #333; color: #eee; border: none; cursor: pointer; }
-        button:hover { background: #555; }
-        #chart { width: 100%; height: 400px; margin-top: 20px; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forex Confluence Dashboard</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: #121212;
+    color: #eee;
+    margin: 0;
+    padding: 20px;
+  }
+
+  h1 {
+    text-align: center;
+    margin-bottom: 20px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 30px;
+  }
+
+  th, td {
+    padding: 10px;
+    border: 1px solid #333;
+    text-align: center;
+  }
+
+  th {
+    background: #1e1e1e;
+  }
+
+  .trend {
+    padding: 5px 10px;
+    border-radius: 5px;
+    color: #fff;
+    font-weight: bold;
+  }
+
+  .Strong-Bullish { background-color: #006400; } /* dark green */
+  .Bullish { background-color: #00c000; } /* light green */
+  .Strong-Bearish { background-color: #8b0000; } /* dark red */
+  .Bearish { background-color: #ff4500; } /* light red */
+
+  .BOS-up::after {
+    content: "⬆";
+    margin-left: 5px;
+  }
+
+  .BOS-down::after {
+    content: "⬇";
+    margin-left: 5px;
+  }
+
+  .confluence-bar {
+    height: 20px;
+    border-radius: 5px;
+    background: #555;
+    position: relative;
+  }
+
+  .confluence-fill {
+    height: 100%;
+    border-radius: 5px;
+    background: #00c000;
+    width: 0%;
+    transition: width 0.5s;
+  }
+</style>
 </head>
 <body>
-    <h1>Forex Confluence Dashboard</h1>
-    <div>
-        <button onclick="loadData()">Refresh</button>
-        <select id="filter" onchange="loadData()">
-            <option value="">All Pairs</option>
-            <option value="Major">Majors</option>
-            <option value="Minor">Minors</option>
-            <option value="Exotic">Exotics</option>
-            <option value="Gold">Gold</option>
-            <option value="Index">Indices</option>
-        </select>
-    </div>
-    <table id="confluence-table">
-        <thead>
-            <tr>
-                <th>Pair</th>
-                <th>Weekly</th>
-                <th>Daily</th>
-                <th>H4</th>
-                <th>H1</th>
-                <th>% Confluence</th>
-                <th>Status</th>
-            </tr>
-        </thead>
-        <tbody></tbody>
-    </table>
 
-    <canvas id="chart"></canvas>
+<h1>Forex Confluence Dashboard</h1>
+<table>
+  <thead>
+    <tr>
+      <th>Pair</th>
+      <th>Weekly</th>
+      <th>Daily</th>
+      <th>H4</th>
+      <th>H1</th>
+      <th>Confluence %</th>
+    </tr>
+  </thead>
+  <tbody id="confluence-table-body">
+    <!-- Rows will be injected here by JS -->
+  </tbody>
+</table>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script>
-        async function loadData() {
-            const filter = document.getElementById("filter").value;
-            const res = await fetch('/confluence');
-            const data = await res.json();
-            const tbody = document.querySelector('#confluence-table tbody');
-            tbody.innerHTML = '';
+<script>
+const API_URL = "http://localhost:5000/confluence";
 
-            const filtered = data.filter(row => {
-                if (!filter) return true;
-                if (filter === "Gold") return row.pair === "XAUUSD";
-                if (filter === "Index") return ["GSPC","DJI","IXIC","FTSE","N225"].includes(row.pair);
-                if (filter === "Major") return ["EURUSD","GBPUSD","USDJPY","USDCHF","AUDUSD","NZDUSD","USDCAD"].includes(row.pair);
-                if (filter === "Minor") return ["EURGBP","EURJPY","GBPJPY","AUDJPY","AUDNZD","CHFJPY"].includes(row.pair);
-                if (filter === "Exotic") return !["EURUSD","GBPUSD","USDJPY","USDCHF","AUDUSD","NZDUSD","USDCAD","EURGBP","EURJPY","GBPJPY","AUDJPY","AUDNZD","CHFJPY","XAUUSD","GSPC","DJI","IXIC","FTSE","N225"].includes(row.pair);
-            });
+function mapTrendClass(trendText) {
+  if (!trendText) return '';
+  if (trendText.includes('Strong Bullish')) return 'Strong-Bullish';
+  if (trendText.includes('Bullish')) return 'Bullish';
+  if (trendText.includes('Strong Bearish')) return 'Strong-Bearish';
+  if (trendText.includes('Bearish')) return 'Bearish';
+  return '';
+}
 
-            filtered.forEach(row => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${row.pair}</td>
-                    <td>${row.weekly || 'N/A'}</td>
-                    <td>${row.daily || 'N/A'}</td>
-                    <td>${row.h4 || 'N/A'}</td>
-                    <td>${row.h1 || 'N/A'}</td>
-                    <td>${row.percent || 'N/A'}%</td>
-                    <td>${row.status}</td>
-                `;
-                tbody.appendChild(tr);
-            });
+function mapBOSClass(trendText) {
+  if (!trendText) return '';
+  if (trendText.includes('BOS_up')) return 'BOS-up';
+  if (trendText.includes('BOS_down')) return 'BOS-down';
+  return '';
+}
 
-            // Chart
-            const ctx = document.getElementById('chart').getContext('2d');
-            const labels = filtered.map(r => r.pair);
-            const dataPoints = filtered.map(r => r.percent || 0);
+async function loadConfluence() {
+  const res = await fetch(API_URL);
+  const data = await res.json();
+  const tbody = document.getElementById('confluence-table-body');
+  tbody.innerHTML = '';
 
-            if (window.myChart) window.myChart.destroy();
-            window.myChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: '% Confluence',
-                        data: dataPoints,
-                        backgroundColor: 'rgba(75, 192, 192, 0.6)'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    scales: { y: { beginAtZero: true, max: 100 } }
-                }
-            });
-        }
+  data.forEach(pairData => {
+    const row = document.createElement('tr');
+    row.innerHTML = `<td>${pairData.Pair.replace('=X','')}</td>`;
 
-        loadData();
-        setInterval(loadData, 60_000); // Auto-refresh every 60s
-    </script>
+    let confluenceCount = 0;
+    let total = 0;
+
+    for (const tf of ['Weekly', 'Daily', 'H4', 'H1']) {
+      const cell = document.createElement('td');
+      const val = pairData.Confluence[tf] || '';
+      cell.textContent = val.replace(/ \(.*\)/,''); // only trend text
+      cell.className = 'trend ' + mapTrendClass(val) + ' ' + mapBOSClass(val);
+
+      row.appendChild(cell);
+
+      if (val.includes('Bullish') || val.includes('Bearish')) confluenceCount++;
+      total++;
+    }
+
+    const confluencePercent = Math.round((confluenceCount / total) * 100);
+    const percentCell = document.createElement('td');
+    percentCell.innerHTML = `
+      <div class="confluence-bar">
+        <div class="confluence-fill" style="width: ${confluencePercent}%"></div>
+      </div>
+      ${confluencePercent}%
+    `;
+    row.appendChild(percentCell);
+
+    tbody.appendChild(row);
+  });
+}
+
+loadConfluence();
+</script>
+
 </body>
 </html>
