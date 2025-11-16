@@ -1,5 +1,5 @@
 from flask import Flask, render_template, jsonify
-from twelve import get_confluence
+from twelve import get_confluence  # your data function
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 

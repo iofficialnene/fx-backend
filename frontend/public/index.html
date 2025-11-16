@@ -7,7 +7,6 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-
 <h1>Forex Confluence Dashboard</h1>
 
 <div class="filters">
@@ -18,7 +17,7 @@
 </div>
 
 <div id="cards-container" class="grid-container">
-  <!-- Cards injected here -->
+  <!-- Cards will appear here -->
 </div>
 
 <script>
@@ -44,7 +43,6 @@ async function loadConfluence() {
 function renderCards(data) {
   const container = document.getElementById('cards-container');
   container.innerHTML = '';
-
   data.forEach(pairData => {
     const card = document.createElement('div');
     card.className = 'card Dark';

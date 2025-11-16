@@ -1,18 +1,18 @@
 import yfinance as yf
 
+# List of all pairs, indices, and gold
 PAIRS = [
     # Majors
     "EURUSD=X", "GBPUSD=X", "USDJPY=X", "USDCHF=X",
     "AUDUSD=X", "USDCAD=X", "NZDUSD=X",
     # Minors
-    "EURGBP=X", "EURJPY=X", "GBPJPY=X", "EURAUD=X", "GBPAUD=X",
-    "AUDJPY=X", "AUDNZD=X",
+    "EURGBP=X", "EURJPY=X", "GBPJPY=X",
     # Exotics
-    "USDTRY=X", "USDMXN=X", "USDZAR=X", "USDHKD=X", "USDINR=X",
+    "USDTRY=X", "USDMXN=X", "USDZAR=X",
     # Indices
-    "^DJI", "^GSPC", "^IXIC", "^FTSE", "^GDAXI", "^N225", "^HSI",
+    "^DJI", "^GSPC", "^IXIC", "^FTSE", "^GDAXI",
     # Commodities
-    "GC=F", "CL=F", "SI=F"
+    "GC=F"  # Gold
 ]
 
 def get_confluence():
@@ -24,11 +24,12 @@ def get_confluence():
             if hist.empty:
                 trends = {"Weekly": "", "Daily": "", "H4": "", "H1": ""}
             else:
-                # Placeholder trends, replace with real logic if needed
+                # Example logic; replace with real trend calculation if you have it
                 trends = {"Weekly": "Strong Bullish", "Daily": "Bullish", "H4": "Bullish", "H1": "Bearish"}
 
             confluence_count = sum(1 for t in trends.values() if t)
-            percent = round((confluence_count / len(trends)) * 100)
+            total = len(trends)
+            percent = round((confluence_count / total) * 100)
 
             results.append({
                 "Pair": symbol.replace("=X","").replace("USD","/USD"),
