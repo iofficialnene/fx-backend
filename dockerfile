@@ -1,17 +1,18 @@
-# Use official Python image
-FROM python:3.11-slim
+FROM python:3.11-bullseye
 
-# Set working directory
-WORKDIR /app
+WORKDIR /usr/src/app
+COPY . .
 
-# Copy all files
-COPY . /app
+# System deps for numeric libs (kept minimal)
+RUN apt-get update && \
+    apt-get install -y build-essential gfortran libopenblas-dev liblapack-dev && \
+    rm -rf /var/lib/apt/lists/*
 
-# Install dependencies
+RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose port (matches app.py)
 EXPOSE 5000
 
-# Use gunicorn to run the Flask app in production
-CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:5000", "app:app"]
+# Use JSON form for CMD and default to PORT env var (Render sets $PORT)
+ENV PORT=5000
+CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:$PORT", "--workers", "3"]
