@@ -1,87 +1,143 @@
-<!DOCTYPE html>
+<!-- templates/index.html -->
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Forex Confluence Dashboard</title>
-<style>
-body { font-family: Arial; background: #121212; color: #eee; padding: 20px; }
-h1 { text-align: center; margin-bottom: 20px; }
-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-th, td { padding: 10px; border: 1px solid #333; text-align: center; }
-th { background: #1e1e1e; }
-.trend { padding: 5px 10px; border-radius: 5px; color: #fff; font-weight: bold; }
-.Strong-Bullish { background-color: #006400; }
-.Bullish { background-color: #00c000; }
-.Strong-Bearish { background-color: #8b0000; }
-.Bearish { background-color: #ff4500; }
-.confluence-bar { height: 20px; border-radius: 5px; background: #555; position: relative; }
-.confluence-fill { height: 100%; border-radius: 5px; background: #00c000; width: 0%; transition: width 0.5s; }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Forex Confluence Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
+  <header>
+    <h1>Forex Confluence Dashboard</h1>
+    <div class="controls">
+      <select id="viewStyle">
+        <option value="grid">Grid (Cards)</option>
+        <option value="table">Table</option>
+      </select>
 
-<h1>Forex Confluence Dashboard</h1>
-<table>
-  <thead>
-    <tr>
-      <th>Pair</th>
-      <th>Weekly</th>
-      <th>Daily</th>
-      <th>H4</th>
-      <th>H1</th>
-      <th>Confluence %</th>
-    </tr>
-  </thead>
-  <tbody id="confluence-table-body"></tbody>
-</table>
+      <select id="filterBy">
+        <option value="all">All</option>
+        <option value="strong-bullish">Strong Bullish</option>
+        <option value="bullish">Bullish</option>
+        <option value="mixed">Mixed</option>
+        <option value="bearish">Bearish</option>
+        <option value="strong-bearish">Strong Bearish</option>
+        <option value="no-confluence">No Confluence</option>
+      </select>
+
+      <button id="refreshBtn">Refresh</button>
+    </div>
+  </header>
+
+  <main id="content" class="grid">
+    <!-- cards injected here -->
+  </main>
+
+  <footer>
+    <small>Data: yfinance (primary) — Twelve Data (fallback if configured). UI: custom.</small>
+  </footer>
 
 <script>
-async function loadConfluence() {
-    try {
-        const res = await fetch("/confluence");
-        const data = await res.json();
-        const tbody = document.getElementById('confluence-table-body');
-        tbody.innerHTML = '';
+const API = "/confluence";
 
-        data.forEach(pairData => {
-            const row = document.createElement('tr');
-            row.innerHTML = `<td>${pairData.Pair.replace('=X','')}</td>`;
+function createCard(item) {
+  const card = document.createElement('div');
+  card.className = 'card';
 
-            let confluenceCount = 0;
-            let total = 0;
+  // Tag color depends on summary
+  const summary = item.Summary || 'No Confluence';
 
-            ['Weekly','Daily','H4','H1'].forEach(tf => {
-                const val = pairData.Confluence[tf] || '';
-                const cell = document.createElement('td');
-                cell.textContent = val;
-                cell.className = 'trend ' +
-                    (val.includes('Strong Bullish') ? 'Strong-Bullish' :
-                     val.includes('Bullish') ? 'Bullish' :
-                     val.includes('Strong Bearish') ? 'Strong-Bearish' :
-                     val.includes('Bearish') ? 'Bearish' : '');
-                row.appendChild(cell);
+  card.innerHTML = `
+    <div class="card-header">
+      <div class="pair">${item.Pair}</div>
+      <div class="summary ${summary.replace(/\s+/g,'-')}">${summary}</div>
+    </div>
 
-                if(val.includes('Bullish') || val.includes('Bearish')) confluenceCount++;
-                total++;
-            });
+    <div class="trend-bars">
+      ${Object.entries(item.Confluence).map(([tf, val]) => {
+        return `<div class="tf-row">
+                  <div class="tf-label">${tf}</div>
+                  <div class="tf-value ${val.includes('Strong') ? 'strong' : ''}">${val || '-'}</div>
+                </div>`;
+      }).join('')}
+    </div>
 
-            const percent = Math.round((confluenceCount/total)*100);
-            const percentCell = document.createElement('td');
-            percentCell.innerHTML = `<div class="confluence-bar">
-                <div class="confluence-fill" style="width: ${percent}%"></div>
-            </div>${percent}%`;
-            row.appendChild(percentCell);
-
-            tbody.appendChild(row);
-        });
-    } catch(err) {
-        console.error("Failed to load confluence data:", err);
-    }
+    <div class="confluence-meter">
+      <div class="meter-bar">
+        <div class="fill" style="width:${item.ConfluencePercent}%"></div>
+      </div>
+      <div class="meter-label">${item.ConfluencePercent}%</div>
+    </div>
+  `;
+  card.dataset.summary = summary.toLowerCase();
+  return card;
 }
 
-loadConfluence();
-</script>
+async function loadData() {
+  const res = await fetch(API);
+  const data = await res.json();
+  render(data);
+}
 
+function render(data) {
+  const container = document.getElementById('content');
+  container.innerHTML = '';
+  const view = document.getElementById('viewStyle').value;
+  container.className = view === 'grid' ? 'grid' : 'table-view';
+
+  const filter = document.getElementById('filterBy').value;
+
+  // filter logic
+  const filtered = data.filter(d => {
+    if (filter === 'all') return true;
+    const low = d.Summary ? d.Summary.toLowerCase() : 'no confluence';
+    if (filter === 'no-confluence') return low === 'no confluence';
+    if (filter === 'mixed') return low === 'mixed';
+    if (filter === 'strong-bullish') return low === 'strong bullish';
+    if (filter === 'strong-bearish') return low === 'strong bearish';
+    return low.includes(filter);
+  });
+
+  if (view === 'grid') {
+    filtered.forEach(item => {
+      const card = createCard(item);
+      container.appendChild(card);
+    });
+  } else {
+    // render table
+    const table = document.createElement('table');
+    table.className = 'full-table';
+    table.innerHTML = `
+      <thead>
+        <tr><th>Pair</th><th>Summary</th><th>Weekly</th><th>Daily</th><th>H4</th><th>H1</th><th>Confluence</th></tr>
+      </thead>
+    `;
+    const tbody = document.createElement('tbody');
+    filtered.forEach(item => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${item.Pair}</td>
+        <td class="${item.Summary.replace(/\s+/g,'-')}">${item.Summary}</td>
+        <td>${item.Confluence.Weekly || '-'}</td>
+        <td>${item.Confluence.Daily || '-'}</td>
+        <td>${item.Confluence.H4 || '-'}</td>
+        <td>${item.Confluence.H1 || '-'}</td>
+        <td>${item.ConfluencePercent}%</td>
+      `;
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+  }
+}
+
+document.getElementById('refreshBtn').addEventListener('click', loadData);
+document.getElementById('viewStyle').addEventListener('change', loadData);
+document.getElementById('filterBy').addEventListener('change', loadData);
+
+// auto load
+loadData();
+</script>
 </body>
 </html>
