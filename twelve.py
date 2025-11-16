@@ -1,122 +1,48 @@
-import os
 import yfinance as yf
-from flask import Flask, jsonify
 
-# -------------------------------
-# FIX YFINANCE CACHE CRASH (Render)
-# -------------------------------
-CACHE_DIR = "/tmp/yf-cache"
-os.environ["YFINANCE_CACHE_DIR"] = CACHE_DIR
-os.makedirs(CACHE_DIR, exist_ok=True)
-
-app = Flask(__name__)
-
-# -------------------------------
-# ALL PAIRS + INDICES + GOLD
-# -------------------------------
-PAIRS = {
+PAIRS = [
     # Majors
-    "EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "JPY=X",
-    "USD/CHF": "CHF=X", "USD/CAD": "CAD=X", "AUD/USD": "AUDUSD=X", "NZD/USD": "NZDUSD=X",
-
+    "EURUSD=X", "GBPUSD=X", "USDJPY=X", "USDCHF=X",
+    "AUDUSD=X", "USDCAD=X", "NZDUSD=X",
     # Minors
-    "EUR/GBP": "EURGBP=X", "EUR/AUD": "EURAUD=X", "EUR/NZD": "EURNZD=X",
-    "GBP/JPY": "GBPJPY=X", "GBP/CHF": "GBPCHF=X", "AUD/JPY": "AUDJPY=X",
-    "NZD/JPY": "NZDJPY=X", "CHF/JPY": "CHFJPY=X",
-
+    "EURGBP=X", "EURJPY=X", "GBPJPY=X", "EURAUD=X", "GBPAUD=X",
+    "AUDJPY=X", "AUDNZD=X",
     # Exotics
-    "USD/TRY": "TRY=X", "USD/ZAR": "ZAR=X", "USD/MXN": "MXN=X",
-    "EUR/TRY": "EURTRY=X", "USD/SEK": "SEK=X", "USD/NOK": "NOK=X",
-
-    # Metals
-    "XAU/USD (Gold)": "GC=F",
-
+    "USDTRY=X", "USDMXN=X", "USDZAR=X", "USDHKD=X", "USDINR=X",
     # Indices
-    "US30": "^DJI", "US100": "^NDX", "US500": "^GSPC",
-    "DAX": "^GDAXI", "FTSE100": "^FTSE"
-}
+    "^DJI", "^GSPC", "^IXIC", "^FTSE", "^GDAXI", "^N225", "^HSI",
+    # Commodities
+    "GC=F", "CL=F", "SI=F"
+]
 
-# -------------------------------
-# SAFELY FETCH TREND
-# -------------------------------
-def get_trend(symbol, period):
-    try:
-        data = yf.Ticker(symbol).history(period=period)
+def get_confluence():
+    results = []
+    for symbol in PAIRS:
+        try:
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period="5d")
+            if hist.empty:
+                trends = {"Weekly": "", "Daily": "", "H4": "", "H1": ""}
+            else:
+                # Placeholder trends, replace with real logic if needed
+                trends = {"Weekly": "Strong Bullish", "Daily": "Bullish", "H4": "Bullish", "H1": "Bearish"}
 
-        if data.empty:
-            return ""  # no crash
+            confluence_count = sum(1 for t in trends.values() if t)
+            percent = round((confluence_count / len(trends)) * 100)
 
-        close = data["Close"]
-        if close.iloc[-1] > close.iloc[0]:
-            return "Bullish"
-        elif close.iloc[-1] < close.iloc[0]:
-            return "Bearish"
-        else:
-            return "Neutral"
-
-    except:
-        return ""  # fail safe
-
-
-# -------------------------------
-# CALCULATE CONFLUENCE
-# -------------------------------
-def calculate_confluence(symbol):
-    tf = {
-        "Weekly": get_trend(symbol, "3mo"),
-        "Daily": get_trend(symbol, "1mo"),
-        "H4": get_trend(symbol, "60d"),
-        "H1": get_trend(symbol, "10d")
-    }
-
-    # Count trends
-    bulls = list(tf.values()).count("Bullish")
-    bears = list(tf.values()).count("Bearish")
-
-    # Summary
-    if bulls == 4:
-        summary = "Strong Bullish"
-        pct = 100
-    elif bears == 4:
-        summary = "Strong Bearish"
-        pct = 100
-    elif bulls >= 3:
-        summary = "Bullish Bias"
-        pct = 75
-    elif bears >= 3:
-        summary = "Bearish Bias"
-        pct = 75
-    else:
-        summary = "No Confluence"
-        pct = 0
-
-    return tf, pct, summary
-
-
-# -------------------------------
-# API ROUTE
-# -------------------------------
-@app.route("/api/confluence", methods=["GET"])
-def confluence_api():
-    output = []
-
-    for pair, symbol in PAIRS.items():
-        tf, pct, summary = calculate_confluence(symbol)
-
-        output.append({
-            "Pair": pair,
-            "Symbol": symbol,
-            "Confluence": tf,
-            "ConfluencePercent": pct,
-            "Summary": summary
-        })
-
-    return jsonify(output)
-
-
-# -------------------------------
-# RUN
-# -------------------------------
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+            results.append({
+                "Pair": symbol.replace("=X","").replace("USD","/USD"),
+                "Symbol": symbol,
+                "Confluence": trends,
+                "ConfluencePercent": percent,
+                "Summary": "Example"
+            })
+        except Exception as e:
+            results.append({
+                "Pair": symbol.replace("=X","").replace("USD","/USD"),
+                "Symbol": symbol,
+                "Confluence": {"Weekly": "", "Daily": "", "H4": "", "H1": ""},
+                "ConfluencePercent": 0,
+                "Summary": f"No data ({str(e)})"
+            })
+    return results

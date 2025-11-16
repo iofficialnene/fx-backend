@@ -4,160 +4,75 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Forex Confluence Dashboard</title>
-<style>
-  body {
-    font-family: Arial, sans-serif;
-    background: #121212;
-    color: #eee;
-    margin: 0;
-    padding: 20px;
-  }
-
-  h1 {
-    text-align: center;
-    margin-bottom: 20px;
-    letter-spacing: 1px;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 30px;
-    font-size: 16px;
-  }
-
-  th, td {
-    padding: 10px;
-    border: 1px solid #333;
-    text-align: center;
-  }
-
-  th {
-    background: #1e1e1e;
-  }
-
-  .trend {
-    padding: 6px 12px;
-    border-radius: 6px;
-    color: #fff;
-    font-weight: bold;
-  }
-
-  .Strong-Bullish { background-color: #006400; }
-  .Bullish { background-color: #00c000; }
-  .Strong-Bearish { background-color: #8b0000; }
-  .Bearish { background-color: #ff4500; }
-
-  .BOS-up::after {
-    content: " ⬆";
-    margin-left: 5px;
-  }
-
-  .BOS-down::after {
-    content: " ⬇";
-    margin-left: 5px;
-  }
-
-  .confluence-bar {
-    height: 20px;
-    border-radius: 5px;
-    background: #555;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .confluence-fill {
-    height: 100%;
-    background: #00c000;
-    width: 0%;
-    transition: width 0.5s ease;
-  }
-</style>
+<link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 
 <h1>Forex Confluence Dashboard</h1>
 
-<table>
-  <thead>
-    <tr>
-      <th>Pair</th>
-      <th>Weekly</th>
-      <th>Daily</th>
-      <th>H4</th>
-      <th>H1</th>
-      <th>Confluence %</th>
-    </tr>
-  </thead>
-  <tbody id="confluence-table-body">
-  </tbody>
-</table>
+<div class="filters">
+  <button onclick="filterConfluence('All')">All</button>
+  <button onclick="filterConfluence('Strong Bullish')">Strong Bullish</button>
+  <button onclick="filterConfluence('Strong Bearish')">Strong Bearish</button>
+  <button onclick="filterConfluence('No Confluence')">No Confluence</button>
+</div>
+
+<div id="cards-container" class="grid-container">
+  <!-- Cards injected here -->
+</div>
 
 <script>
 const API_URL = "/confluence";
+let allData = [];
 
-function mapTrendClass(text) {
-  if (!text) return '';
-  if (text.includes("Strong Bullish")) return "Strong-Bullish";
-  if (text.includes("Bullish")) return "Bullish";
-  if (text.includes("Strong Bearish")) return "Strong-Bearish";
-  if (text.includes("Bearish")) return "Bearish";
-  return "";
-}
-
-function bosClass(text) {
-  if (!text) return "";
-  if (text.includes("BOS_up")) return "BOS-up";
-  if (text.includes("BOS_down")) return "BOS-down";
-  return "";
+function mapTrendClass(trendText) {
+  if (!trendText) return '';
+  if (trendText.includes('Strong Bullish')) return 'Strong-Bullish';
+  if (trendText.includes('Bullish')) return 'Bullish';
+  if (trendText.includes('Strong Bearish')) return 'Strong-Bearish';
+  if (trendText.includes('Bearish')) return 'Bearish';
+  return '';
 }
 
 async function loadConfluence() {
   const res = await fetch(API_URL);
   const data = await res.json();
-  const tbody = document.getElementById("confluence-table-body");
-  tbody.innerHTML = "";
+  allData = data;
+  renderCards(data);
+}
 
-  data.forEach(pair => {
-    const row = document.createElement("tr");
-    row.innerHTML = `<td>${pair.Pair.replace("=X", "")}</td>`;
+function renderCards(data) {
+  const container = document.getElementById('cards-container');
+  container.innerHTML = '';
 
-    let confluenceScore = 0;
+  data.forEach(pairData => {
+    const card = document.createElement('div');
+    card.className = 'card Dark';
 
-    ["Weekly", "Daily", "H4", "H1"].forEach(tf => {
-      const val = pair.Confluence[tf] || "N/A";
-      const cell = document.createElement("td");
+    let bars = '';
+    for (const tf of ['Weekly','Daily','H4','H1']) {
+      const trend = pairData.Confluence[tf] || '';
+      bars += `<div class="trend-bar ${mapTrendClass(trend)}" title="${tf}: ${trend}"></div>`;
+    }
 
-      cell.textContent = val.replace(/ \(.*\)/, "");
-      cell.className =
-        "trend " +
-        mapTrendClass(val) +
-        " " +
-        bosClass(val);
-
-      if (val.includes("Bullish") || val.includes("Bearish")) {
-        confluenceScore++;
-      }
-      row.appendChild(cell);
-    });
-
-    const percent = Math.round((confluenceScore / 4) * 100);
-
-    const percentCell = document.createElement("td");
-    percentCell.innerHTML = `
-      <div class="confluence-bar">
-        <div class="confluence-fill" style="width: ${percent}%"></div>
-      </div>
-      ${percent}%
+    card.innerHTML = `
+      <h2 class="pair-title">${pairData.Pair}</h2>
+      <div class="trend-bars">${bars}</div>
+      <div class="confluence-percent">${pairData.ConfluencePercent}%</div>
     `;
-
-    row.appendChild(percentCell);
-    tbody.appendChild(row);
+    container.appendChild(card);
   });
+}
+
+function filterConfluence(filter) {
+  if(filter === "All") renderCards(allData);
+  else {
+    const filtered = allData.filter(d => d.Summary.includes(filter));
+    renderCards(filtered);
+  }
 }
 
 loadConfluence();
 </script>
-
 </body>
 </html>

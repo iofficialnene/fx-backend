@@ -1,23 +1,19 @@
-import os
-os.environ["YFINANCE_NO_CACHE"] = "1"
+from flask import Flask, render_template, jsonify
+from twelve import get_confluence
 
-from flask import Flask, request, jsonify
-import yfinance as yf
-
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates", static_folder="static")
 
 @app.route("/")
 def home():
-    return {"status": "running", "message": "FX Confluence backend online"}
+    return render_template("index.html")
 
-@app.route("/price")
-def price():
-    symbol = request.args.get("symbol", "GBPJPY")
-    data = yf.Ticker(symbol).history(period="1d")
-    if data.empty:
-        return jsonify({"error": "No data"}), 400
-    return jsonify({"symbol": symbol, "price": float(data["Close"].iloc[-1])})
+@app.route("/confluence")
+def confluence_endpoint():
+    try:
+        data = get_confluence()
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=5000, debug=True)
