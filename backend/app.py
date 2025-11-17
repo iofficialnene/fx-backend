@@ -1,23 +1,19 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
-from confluence import get_confluence   # ← correct
+from confluence import get_confluence
 
-app = Flask(__name__, static_folder='../frontend/dist', static_url_path='/')
+app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app)
 
-@app.route("/confluence")
-def confluence_api():
-    # Returns list of pair dicts
+@app.route("/api/confluence")
+def api_confluence():
     data = get_confluence()
     return jsonify(data)
 
-# Optional: serve the frontend build from backend (if you want single deploy)
-@app.route("/", defaults={"path": ""})
-@app.route("/<path:path>")
-def serve_frontend(path):
-    if path != "" and (app.static_folder / path).exists():
-        return send_from_directory(app.static_folder, path)
+# Serve frontend index.html
+@app.route("/")
+def serve_frontend():
     return send_from_directory(app.static_folder, "index.html")
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(__import__("os").environ.get("PORT", 5000)), debug=True)
+    app.run(host="0.0.0.0", port=5000)
