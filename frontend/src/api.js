@@ -5,4 +5,4 @@ const API = (path) => {
   return fetch(base + path).then(r => r.json());
 };
 
-export const fetchConfluence = () => API("/confluence");
+export const API_URL = "https://backend-qxff.onrender.com"
