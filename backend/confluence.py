@@ -6,6 +6,8 @@ This implementation:
  - Computes simple EMA trend test vs 200-period (weekly/daily) and 50/20 for H4/H1 to decide Strong/Bullish/Bearish/Strong Bearish
  - If data unavailable, leaves blank and returns ConfluencePercent 0
 """
+import os
+os.environ["YFINANCE_NO_CACHE"] = "1"
 
 import os
 import logging
@@ -13,6 +15,7 @@ import math
 import pandas as pd
 import numpy as np
 import yfinance as yf
+yf.set_global(use_cache=False)
 
 # ensure cache dir that yfinance tries to use is writable
 try:
