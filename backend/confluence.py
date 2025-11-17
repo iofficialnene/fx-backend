@@ -7,12 +7,13 @@ This implementation:
  - If data unavailable, leaves blank and returns ConfluencePercent 0
 """
 import os
-os.environ["YFINANCE_NO_CACHE"] = "1"   # disable caching fully
+os.environ["YFINANCE_CACHE_DIR"] = "/tmp/py-yfinance"
+os.makedirs("/tmp/py-yfinance", exist_ok=True)
 
+import yfinance as yf
 import logging
 import pandas as pd
 import numpy as np
-import yfinance as yf
 
 # Patch yfinance cache location (Render allows /tmp only)
 try:
