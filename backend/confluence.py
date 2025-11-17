@@ -1,33 +1,39 @@
+# confluence.py
 """
-Produces JSON list of pairs with confluence per timeframe.
-This implementation:
- - Ensures yfinance cache dir doesn't try to create /root/.cache issue by setting cache to /tmp
- - Tries to fetch appropriate intervals for weekly/daily/4h/1h
- - Computes simple EMA trend test vs 200-period (weekly/daily) and 50/20 for H4/H1 to decide Strong/Bullish/Bearish/Strong Bearish
- - If data unavailable, leaves blank and returns ConfluencePercent 0
+Confluence engine (safe-for-Render / Docker)
+- Ensures yfinance cache uses /tmp (prevents /root/.cache errors)
+- Provides get_confluence() -> list[dict] expected by app.py
+- Minimal, defensive yfinance usage
 """
 import os
-os.environ["YFINANCE_CACHE_DIR"] = "/tmp/py-yfinance"
-os.makedirs("/tmp/py-yfinance", exist_ok=True)
-
-import yfinance as yf
 import logging
+import math
 import pandas as pd
 import numpy as np
 
-# Patch yfinance cache location (Render allows /tmp only)
-try:
-    import yfinance.utils as yfutils
-    _tmp_cache = "/tmp/py-yfinance"
-    os.makedirs(_tmp_cache, exist_ok=True)
-    yfutils._cache_dir = _tmp_cache
-except Exception:
-    pass
+# --- FIX: force cache to /tmp and avoid yfinance trying to create /root/.cache ---
+# Ensure HOME is /tmp before importing yfinance (yfinance builds cache path from HOME)
+os.environ.setdefault("HOME", "/tmp")
+# Additionally set a specific cache dir env var
+os.environ.setdefault("YFINANCE_CACHE_DIR", "/tmp/.cache/py-yfinance")
 
+_cache_dir = "/tmp/.cache/py-yfinance"
+# If a file exists at that path (rare), remove it and create directory
+if os.path.exists(_cache_dir) and not os.path.isdir(_cache_dir):
+    try:
+        os.remove(_cache_dir)
+    except Exception:
+        pass
+os.makedirs(_cache_dir, exist_ok=True)
+
+# Now import yfinance (safe)
+import yfinance as yf
+
+# logging
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("confluence")
 
-# Master list - majors, minors, some exotics, indices and gold
+# Master list - majors, minors, some exotics, indices and metals
 PAIRS = [
     {"Pair": "EUR/USD", "Symbol": "EURUSD=X"},
     {"Pair": "GBP/USD", "Symbol": "GBPUSD=X"},
@@ -42,11 +48,9 @@ PAIRS = [
     {"Pair": "AUD/JPY", "Symbol": "AUDJPY=X"},
     {"Pair": "AUD/NZD", "Symbol": "AUDNZD=X"},
     {"Pair": "CHF/JPY", "Symbol": "CHFJPY=X"},
-    # exotics (examples)
     {"Pair": "USD/TRY", "Symbol": "USDTRY=X"},
     {"Pair": "USD/ZAR", "Symbol": "USDZAR=X"},
     {"Pair": "USD/MXN", "Symbol": "USDMXN=X"},
-    # indices and metals
     {"Pair": "S&P 500", "Symbol": "^GSPC"},
     {"Pair": "Dow Jones", "Symbol": "^DJI"},
     {"Pair": "Nasdaq", "Symbol": "^IXIC"},
@@ -56,7 +60,6 @@ PAIRS = [
     {"Pair": "Silver", "Symbol": "SI=F"},
 ]
 
-# timeframes mapping: timeframe -> (period to request, interval)
 TF_SETTINGS = {
     "Weekly": ("3y", "1wk"),
     "Daily": ("1y", "1d"),
@@ -81,19 +84,21 @@ def compute_ema(series, n):
         return None
 
 def trend_from_ema(df, ema_period, strong_threshold=0.01):
-    # df expected to have 'Close'
     if df is None or 'Close' not in df or df['Close'].empty:
         return None
     close = df['Close'].dropna()
-    if len(close) < ema_period // 2:
+    if len(close) < max(5, ema_period // 10):
         return None
     ema = compute_ema(close, ema_period)
     if ema is None or ema.empty:
         return None
     last_close = float(close.iloc[-1])
     last_ema = float(ema.iloc[-1])
-    # slope check (ema direction)
-    slope = last_ema - float(ema.iloc[-3]) if len(ema) > 3 else last_ema - float(ema.iloc[0])
+    # slope approx
+    if len(ema) >= 3:
+        slope = last_ema - float(ema.iloc[-3])
+    else:
+        slope = last_ema - float(ema.iloc[0])
     if last_close > last_ema * (1 + strong_threshold) and slope > 0:
         return "Strong Bullish"
     if last_close > last_ema and slope >= 0:
@@ -110,22 +115,19 @@ def get_confluence():
         symbol = item["Symbol"]
         pair_name = item["Pair"]
         confluence = {"Weekly": "", "Daily": "", "H4": "", "H1": ""}
-        # For weekly/daily use 200 EMA; for intraday shorter EMA
         try:
             for tf, (period, interval) in TF_SETTINGS.items():
                 df = safe_download(symbol, period=period, interval=interval)
                 if df is None:
                     confluence[tf] = ""
                     continue
-                # choose ema length
                 if tf in ("Weekly", "Daily"):
                     ema_period = 200
                 elif tf == "H4":
                     ema_period = 50
-                else:  # H1
+                else:
                     ema_period = 20
                 trend = trend_from_ema(df, ema_period)
-                # simple Break of Structure (BOS) naive detection: compare last high/low to previous
                 bos = ""
                 try:
                     highs = df['High'].dropna()
@@ -140,7 +142,7 @@ def get_confluence():
                 confluence[tf] = (trend or "") + bos
         except Exception as e:
             log.exception("error building confluence for %s: %s", symbol, str(e))
-        # compute percent: bullish-like or bearish-like count
+        # percent: count timeframes reporting Bullish/Bearish (not Neutral/blank)
         count = 0
         total = 0
         for v in confluence.values():
