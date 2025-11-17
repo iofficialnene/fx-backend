@@ -1,6 +1,6 @@
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify
 from flask_cors import CORS
-from confluence_data import get_confluence
+from confluence import get_confluence   # ← correct
 
 app = Flask(__name__, static_folder='../frontend/dist', static_url_path='/')
 CORS(app)
