@@ -1,28 +1,24 @@
 """
-Final fully-working Confluence Generator
-– yfinance cache fully disabled (fixes worker crash)
-– safe downloads
-– 200/50/20 EMA trend logic
-– BOS detection
-– Full pair list
+FULLY WORKING Confluence Generator
+- Render-safe yfinance cache (NO worker crash)
+- Stable downloads
+- EMA trend logic (200/50/20)
+- BOS detection
+- Full forex + indices + metals list
 """
+
 import os
 import logging
 import pandas as pd
 import numpy as np
+
+# ------------------------------------------------------------------
+# RENDER FIX — MUST BE FIRST BEFORE IMPORTING YFINANCE
+# ------------------------------------------------------------------
+os.environ["YFINANCE_CACHE_DIR"] = "/tmp/py-yfinance"
+os.makedirs("/tmp/py-yfinance", exist_ok=True)
+
 import yfinance as yf
-
-# ------------------------------
-# 100% FIX THE YFINANCE CRASH
-# ------------------------------
-os.environ["YF_CACHE_DISABLE"] = "1"
-try:
-    yf.utils._CACHE_DISABLE = True
-except:
-    pass
-# This completely disables cache creation so
-# /root/.cache/py-yfinance is never created.
-
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("confluence")
@@ -57,7 +53,7 @@ PAIRS = [
 ]
 
 # ------------------------------
-# timeframe settings
+# TIMEFRAMES
 # ------------------------------
 TF_SETTINGS = {
     "Weekly": ("3y", "1wk"),
@@ -66,9 +62,8 @@ TF_SETTINGS = {
     "H1": ("7d", "1h"),
 }
 
-
 # ------------------------------
-# Download wrapper
+# SAFE DOWNLOAD
 # ------------------------------
 def safe_download(symbol, period, interval):
     try:
@@ -76,16 +71,15 @@ def safe_download(symbol, period, interval):
             symbol,
             period=period,
             interval=interval,
-            progress=False,
             threads=False,
+            progress=False
         )
         if isinstance(df, pd.DataFrame) and not df.empty:
             return df
         return None
     except Exception as e:
-        log.warning(f"Failed to download {symbol}: {e}")
+        log.error(f"Download failed for {symbol}: {e}")
         return None
-
 
 # ------------------------------
 # EMA
@@ -96,12 +90,11 @@ def compute_ema(series, n):
     except:
         return None
 
-
 # ------------------------------
-# Trend Logic
+# TREND LOGIC
 # ------------------------------
 def trend_from_ema(df, ema_period, strong_threshold=0.01):
-    if df is None or "Close" not in df or df["Close"].empty:
+    if df is None or "Close" not in df:
         return None
 
     close = df["Close"].dropna()
@@ -114,7 +107,6 @@ def trend_from_ema(df, ema_period, strong_threshold=0.01):
 
     last_close = float(close.iloc[-1])
     last_ema = float(ema.iloc[-1])
-
     slope = last_ema - float(ema.iloc[-3]) if len(ema) > 3 else 0
 
     # strong trends
@@ -131,58 +123,58 @@ def trend_from_ema(df, ema_period, strong_threshold=0.01):
 
     return "Neutral"
 
-
 # ------------------------------
-# MAIN FUNCTION
+# MAIN LOGIC
 # ------------------------------
 def get_confluence():
-    output = []
+    results = []
 
     for item in PAIRS:
         symbol = item["Symbol"]
-        pair_name = item["Pair"]
+        name = item["Pair"]
 
-        confluence = {"Weekly": "", "Daily": "", "H4": "", "H1": ""}
+        tf_data = {}
 
         for tf, (period, interval) in TF_SETTINGS.items():
             df = safe_download(symbol, period, interval)
             if df is None:
-                confluence[tf] = ""
+                tf_data[tf] = ""
                 continue
 
-            # EMA per timeframe
+            # EMA settings
             ema_period = 200 if tf in ("Weekly", "Daily") else 50 if tf == "H4" else 20
-            trend = trend_from_ema(df, ema_period)
+            trend = trend_from_ema(df, ema_period) or ""
 
             # BOS detection
             bos = ""
-            try:
-                highs = df["High"].dropna()
-                lows = df["Low"].dropna()
+            highs = df["High"].dropna()
+            lows = df["Low"].dropna()
 
-                if len(highs) >= 3:
-                    if highs.iloc[-1] > highs.iloc[-2] > highs.iloc[-3]:
-                        bos = " (BOS_up)"
-                if len(lows) >= 3:
-                    if lows.iloc[-1] < lows.iloc[-2] < lows.iloc[-3]:
-                        bos = " (BOS_down)"
-            except:
-                bos = ""
+            if len(highs) >= 3:
+                if highs.iloc[-1] > highs.iloc[-2] > highs.iloc[-3]:
+                    bos = " (BOS_up)"
+            if len(lows) >= 3:
+                if lows.iloc[-1] < lows.iloc[-2] < lows.iloc[-3]:
+                    bos = " (BOS_down)"
 
-            confluence[tf] = (trend or "") + bos
+            tf_data[tf] = trend + bos
 
-        # percent calc
-        used = [v for v in confluence.values() if v]
+        # Percentage
+        used = [v for v in tf_data.values() if v]
         total = len(used)
-        count = sum(1 for v in used if "Bullish" in v or "Bearish" in v)
+        count = sum(
+            1 for v in used
+            if "Bullish" in v or "Bearish" in v
+        )
+
         percent = round((count / total) * 100) if total > 0 else 0
 
-        output.append({
-            "Pair": pair_name,
+        results.append({
+            "Pair": name,
             "Symbol": symbol,
-            "Confluence": confluence,
+            "Confluence": tf_data,
             "ConfluencePercent": percent,
-            "Summary": f"{percent}%" if percent > 0 else "No Confluence",
+            "Summary": f"{percent}%"
         })
 
-    return output
+    return results

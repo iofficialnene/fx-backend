@@ -7,25 +7,19 @@ app = Flask(__name__, static_folder="frontend", static_url_path="/")
 CORS(app)
 
 @app.route("/confluence")
-def confluence_data():
+def confluence_route():
     try:
-        data = get_confluence()
-        return jsonify(data)
+        return jsonify(get_confluence())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route("/")
-def index():
+def root():
     return send_from_directory(app.static_folder, "index.html")
 
-@app.route("/<path:filename>")
-def serve_static(filename):
-    file_path = os.path.join(app.static_folder, filename)
-
-    if os.path.isfile(file_path):
-        return send_from_directory(app.static_folder, filename)
-    else:
-        return send_from_directory(app.static_folder, "index.html")
+@app.route("/<path:path>")
+def serve_static(path):
+    return send_from_directory(app.static_folder, path)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
