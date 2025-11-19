@@ -3,11 +3,9 @@ from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 from confluence import get_confluence
 
-# App setup
 app = Flask(__name__, static_folder="frontend", static_url_path="/")
-CORS(app)  # Allow phones + browsers to access API
+CORS(app)
 
-# API route
 @app.route("/confluence")
 def confluence_data():
     try:
@@ -16,15 +14,18 @@ def confluence_data():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Serve frontend (index.html)
 @app.route("/")
-def serve_frontend():
+def index():
     return send_from_directory(app.static_folder, "index.html")
 
-# Serve other static files (JS, CSS, images)
-@app.route("/<path:path>")
-def serve_static_file(path):
-    return send_from_directory(app.static_folder, path)
+@app.route("/<path:filename>")
+def serve_static(filename):
+    file_path = os.path.join(app.static_folder, filename)
+
+    if os.path.isfile(file_path):
+        return send_from_directory(app.static_folder, filename)
+    else:
+        return send_from_directory(app.static_folder, "index.html")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
