@@ -1,27 +1,30 @@
 """
 Final fully-working Confluence Generator
-– yfinance cache fully disabled (fixes worker crash)
+– yfinance cache fixed for Render
 – safe downloads
 – 200/50/20 EMA trend logic
 – BOS detection
 – Full pair list
 """
+
 import os
 import logging
 import pandas as pd
 import numpy as np
-import yfinance as yf
 
 # ------------------------------
-# 100% FIX THE YFINANCE CRASH
+# FIX RENDER CRASH (YFINANCE CACHE ERROR)
 # ------------------------------
-os.environ["YF_CACHE_DISABLE"] = "1"
+# Render does NOT allow writing inside /root/.cache
+# This forces yfinance to store cache in the safe /tmp directory.
+os.environ["YFINANCE_CACHE_DIR"] = "/tmp/py-yfinance"
+
 try:
-    yf.utils._CACHE_DISABLE = True
+    os.makedirs("/tmp/py-yfinance", exist_ok=True)
 except:
     pass
-# This completely disables cache creation so
-# /root/.cache/py-yfinance is never created.
+
+import yfinance as yf
 
 
 logging.basicConfig(level=logging.INFO)
@@ -57,7 +60,7 @@ PAIRS = [
 ]
 
 # ------------------------------
-# timeframe settings
+# TIMEFRAME SETTINGS
 # ------------------------------
 TF_SETTINGS = {
     "Weekly": ("3y", "1wk"),
@@ -68,7 +71,7 @@ TF_SETTINGS = {
 
 
 # ------------------------------
-# Download wrapper
+# SAFE DOWNLOAD WRAPPER
 # ------------------------------
 def safe_download(symbol, period, interval):
     try:
@@ -88,7 +91,7 @@ def safe_download(symbol, period, interval):
 
 
 # ------------------------------
-# EMA
+# EMA CALCULATION
 # ------------------------------
 def compute_ema(series, n):
     try:
@@ -98,7 +101,7 @@ def compute_ema(series, n):
 
 
 # ------------------------------
-# Trend Logic
+# TREND FROM EMA
 # ------------------------------
 def trend_from_ema(df, ema_period, strong_threshold=0.01):
     if df is None or "Close" not in df or df["Close"].empty:
@@ -171,7 +174,7 @@ def get_confluence():
 
             confluence[tf] = (trend or "") + bos
 
-        # percent calc
+        # Percent calculation
         used = [v for v in confluence.values() if v]
         total = len(used)
         count = sum(1 for v in used if "Bullish" in v or "Bearish" in v)
