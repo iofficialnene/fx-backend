@@ -1,47 +1,55 @@
+# backend/confluence.py
 """
-Fully fixed version of your original confluence generator.
-- Preserves your logic & features
-- Fixes percent always returning 0%
-- Fixes empty trend strings
-- Fixes None values breaking output
-- Adds stronger trend detection
+Confluence generator - robust, Render-safe.
+- Forces yfinance cache into /tmp
+- Uses proper '=X' currency tickers (Yahoo expects these)
+- Safe download with retries and MultiIndex fixes
+- EMA trend detection (200 / 50 / 20)
+- Fallbacks: resample daily into intraday if intraday blocked
+- Returns list of dicts used by frontend
 """
 
 import os
+# MUST set before importing yfinance
 os.environ.setdefault("YFINANCE_CACHE_DIR", "/tmp/py-yfinance")
+os.environ.setdefault("YFINANCE_NO_CACHE", "1")
+
 try:
     os.makedirs("/tmp/py-yfinance", exist_ok=True)
-except:
+except Exception:
     pass
 
 import logging
-import pandas as pd
-import yfinance as yf
+import time
 from datetime import datetime, timedelta
+
+import pandas as pd
+import numpy as np
+import yfinance as yf
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("confluence")
 
-# ---------------------------------------
-# PAIRS (your original list preserved)
-# ---------------------------------------
+# ---------------------------
+# PAIRS: currency tickers use =X (Yahoo format)
+# ---------------------------
 PAIRS = [
-    {"Pair": "EUR/USD", "Symbol": "EURUSD"},
-    {"Pair": "GBP/USD", "Symbol": "GBPUSD"},
-    {"Pair": "USD/JPY", "Symbol": "USDJPY"},
-    {"Pair": "USD/CHF", "Symbol": "USDCHF"},
-    {"Pair": "AUD/USD", "Symbol": "AUDUSD"},
-    {"Pair": "NZD/USD", "Symbol": "NZDUSD"},
-    {"Pair": "USD/CAD", "Symbol": "USDCAD"},
-    {"Pair": "EUR/GBP", "Symbol": "EURGBP"},
-    {"Pair": "EUR/JPY", "Symbol": "EURJPY"},
-    {"Pair": "GBP/JPY", "Symbol": "GBPJPY"},
-    {"Pair": "AUD/JPY", "Symbol": "AUDJPY"},
-    {"Pair": "AUD/NZD", "Symbol": "AUDNZD"},
-    {"Pair": "CHF/JPY", "Symbol": "CHFJPY"},
-    {"Pair": "USD/TRY", "Symbol": "USDTRY"},
-    {"Pair": "USD/ZAR", "Symbol": "USDZAR"},
-    {"Pair": "USD/MXN", "Symbol": "USDMXN"},
+    {"Pair": "EUR/USD", "Symbol": "EURUSD=X"},
+    {"Pair": "GBP/USD", "Symbol": "GBPUSD=X"},
+    {"Pair": "USD/JPY", "Symbol": "USDJPY=X"},
+    {"Pair": "USD/CHF", "Symbol": "USDCHF=X"},
+    {"Pair": "AUD/USD", "Symbol": "AUDUSD=X"},
+    {"Pair": "NZD/USD", "Symbol": "NZDUSD=X"},
+    {"Pair": "USD/CAD", "Symbol": "USDCAD=X"},
+    {"Pair": "EUR/GBP", "Symbol": "EURGBP=X"},
+    {"Pair": "EUR/JPY", "Symbol": "EURJPY=X"},
+    {"Pair": "GBP/JPY", "Symbol": "GBPJPY=X"},
+    {"Pair": "AUD/JPY", "Symbol": "AUDJPY=X"},
+    {"Pair": "AUD/NZD", "Symbol": "AUDNZD=X"},
+    {"Pair": "CHF/JPY", "Symbol": "CHFJPY=X"},
+    {"Pair": "USD/TRY", "Symbol": "USDTRY=X"},
+    {"Pair": "USD/ZAR", "Symbol": "USDZAR=X"},
+    {"Pair": "USD/MXN", "Symbol": "USDMXN=X"},
     {"Pair": "S&P 500", "Symbol": "^GSPC"},
     {"Pair": "Dow Jones", "Symbol": "^DJI"},
     {"Pair": "Nasdaq", "Symbol": "^IXIC"},
@@ -51,149 +59,193 @@ PAIRS = [
     {"Pair": "Silver", "Symbol": "SI=F"},
 ]
 
-TFS = ["Weekly", "Daily", "H4", "H1"]
+# simple timeframe names front expects
+TF_SETTINGS = {
+    "Weekly": {"interval": "1wk", "lookback_days": 365*3},
+    "Daily": {"interval": "1d", "lookback_days": 365},
+    "H4": {"interval": "4h", "lookback_days": 60},
+    "H1": {"interval": "1h", "lookback_days": 7},
+}
 
-# ---------------------------------------
-# SAFE DOWNLOAD (same as original)
-# ---------------------------------------
-def safe_download(symbol, interval, start=None):
-    try:
-        df = yf.download(
-            symbol,
-            interval=interval,
-            start=start,
-            progress=False,
-            threads=False,
-            timeout=20,
-        )
-        if df is None or df.empty:
-            return None
+# ---------------------------
+# safe_download: retries + multi-index fix
+# ---------------------------
+def safe_download(symbol, interval, start=None, end=None, retries=2, pause=1):
+    kwargs = dict(tickers=symbol, interval=interval, progress=False, threads=False, timeout=20)
+    if start:
+        kwargs["start"] = start
+    if end:
+        kwargs["end"] = end
 
-        df.index = pd.to_datetime(df.index)
-        df = df.sort_index()
+    for attempt in range(retries + 1):
+        try:
+            df = yf.download(**kwargs)
+            # If MultiIndex columns (sometimes happens) -> flatten
+            if isinstance(getattr(df, "columns", None), pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
 
-        if "Close" not in df.columns:
-            if "Adj Close" in df.columns:
-                df["Close"] = df["Adj Close"]
+            if df is None or df.empty:
+                log.debug("safe_download empty for %s @%s (attempt %s)", symbol, interval, attempt)
+                df = None
             else:
-                return None
+                # ensure datetime index & sorted
+                try:
+                    df.index = pd.to_datetime(df.index)
+                except Exception:
+                    pass
+                df = df.sort_index()
+                # ensure Close column exists (map Adjusted -> Close if needed)
+                if "Close" not in df.columns and "Adj Close" in df.columns:
+                    df["Close"] = df["Adj Close"]
+                if "Close" not in df.columns:
+                    log.debug("safe_download: no Close col for %s @%s", symbol, interval)
+                    df = None
 
-        return df
-    except:
+            if df is not None:
+                return df
+        except Exception as e:
+            log.warning("safe_download failed for %s @%s attempt %s: %s", symbol, interval, attempt, e)
+        if attempt < retries:
+            time.sleep(pause)
+    return None
+
+# ---------------------------
+# resample daily -> intraday fallback
+# ---------------------------
+def resample_from_daily(df_daily, rule="4H"):
+    try:
+        if df_daily is None or df_daily.empty:
+            return None
+        start = df_daily.index.min()
+        end = df_daily.index.max() + pd.Timedelta(days=1)
+        rng = pd.date_range(start=start, end=end, freq=rule, closed="left")
+        o = df_daily["Open"].reindex(rng, method="ffill")
+        h = df_daily["High"].reindex(rng, method="ffill")
+        l = df_daily["Low"].reindex(rng, method="ffill")
+        c = df_daily["Close"].reindex(rng, method="ffill")
+        vol = df_daily["Volume"].reindex(rng, method="ffill").fillna(0)
+        new = pd.DataFrame({"Open": o, "High": h, "Low": l, "Close": c, "Volume": vol}, index=rng)
+        return new
+    except Exception:
         return None
 
-
-# ---------------------------------------
-# EMA Trend Detection (improved)
-# ---------------------------------------
-def trend_from_ema(df, period):
+# ---------------------------
+# EMA & trend
+# ---------------------------
+def compute_ema(series, n):
     try:
-        if df is None or df.empty:
-            return ""
+        return series.ewm(span=n, adjust=False).mean()
+    except Exception:
+        return None
 
+def trend_from_ema(df, ema_period, strong_threshold=0.01):
+    try:
+        if df is None or df.empty or "Close" not in df:
+            return None
         close = df["Close"].dropna()
-        if len(close) < period:
-            return ""
-
-        ema = close.ewm(span=period, adjust=False).mean()
-        price = close.iloc[-1]
-        ema_val = ema.iloc[-1]
-
-        dist = (price - ema_val) / ema_val
-
-        if dist > 0.015:
+        if len(close) < max(10, ema_period // 2):
+            return None
+        ema = compute_ema(close, ema_period)
+        if ema is None or ema.empty:
+            return None
+        last_close = float(close.iloc[-1])
+        last_ema = float(ema.iloc[-1])
+        slope = (float(ema.iloc[-1]) - float(ema.iloc[-3])) if len(ema) > 3 else 0.0
+        if last_close > last_ema * (1 + strong_threshold) and slope > 0:
             return "Strong Bullish"
-        if dist > 0:
+        if last_close > last_ema and slope >= 0:
             return "Bullish"
-        if dist < -0.015:
+        if last_close < last_ema * (1 - strong_threshold) and slope < 0:
             return "Strong Bearish"
-        if dist < 0:
+        if last_close < last_ema and slope <= 0:
             return "Bearish"
         return "Neutral"
-    except:
-        return ""
+    except Exception:
+        return None
 
-
-# ---------------------------------------
-# BOS detection (unchanged)
-# ---------------------------------------
+# ---------------------------
+# BOS detection
+# ---------------------------
 def detect_bos(df):
     try:
         highs = df["High"].dropna()
         lows = df["Low"].dropna()
-
-        if len(highs) > 3 and highs.iloc[-1] > highs.iloc[-2] > highs.iloc[-3]:
+        if len(highs) >= 3 and highs.iloc[-1] > highs.iloc[-2] > highs.iloc[-3]:
             return " (BOS_up)"
-
-        if len(lows) > 3 and lows.iloc[-1] < lows.iloc[-2] < lows.iloc[-3]:
+        if len(lows) >= 3 and lows.iloc[-1] < lows.iloc[-2] < lows.iloc[-3]:
             return " (BOS_down)"
-    except:
+    except Exception:
         pass
-
     return ""
 
-
-# ---------------------------------------
-# FIXED: Confluence calculation
-# ---------------------------------------
+# ---------------------------
+# Main: get_confluence
+# ---------------------------
 def get_confluence():
-    output = []
-
+    result = []
     today = datetime.utcnow().date()
-    start_daily = (today - timedelta(days=365)).isoformat()
+    for pair in PAIRS:
+        symbol = pair["Symbol"]
+        pair_name = pair["Pair"]
+        confluence = {tf: "" for tf in TF_SETTINGS.keys()}
 
-    for item in PAIRS:
-        sym = item["Symbol"]
-        name = item["Pair"]
+        # Attempt daily + weekly first (stable)
+        try:
+            daily_start = (today - timedelta(days=TF_SETTINGS["Daily"]["lookback_days"])).isoformat()
+            weekly_start = (today - timedelta(days=TF_SETTINGS["Weekly"]["lookback_days"])).isoformat()
+        except Exception:
+            daily_start = None
+            weekly_start = None
 
-        # download base data
-        daily = safe_download(sym, "1d", start=start_daily)
-        h4 = safe_download(sym, "4h")
-        h1 = safe_download(sym, "1h")
-        weekly = safe_download(sym, "1wk")
+        daily_df = safe_download(symbol, TF_SETTINGS["Daily"]["interval"], start=daily_start)
+        weekly_df = safe_download(symbol, TF_SETTINGS["Weekly"]["interval"], start=weekly_start)
 
-        # fallback resampling if intraday missing
-        if daily is not None:
-            if h4 is None:
-                h4 = daily.resample("4H").ffill()
-            if h1 is None:
-                h1 = daily.resample("1H").ffill()
-            if weekly is None:
-                weekly = daily.resample("W").agg(
-                    {"Open": "first", "High": "max", "Low": "min", "Close": "last"}
-                )
+        # try intraday; if fails resample from daily
+        h4_df = safe_download(symbol, TF_SETTINGS["H4"]["interval"])
+        h1_df = safe_download(symbol, TF_SETTINGS["H1"]["interval"])
 
-        conf = {}
+        if h4_df is None and daily_df is not None:
+            h4_df = resample_from_daily(daily_df, "4H")
+        if h1_df is None and daily_df is not None:
+            h1_df = resample_from_daily(daily_df, "1H")
+
+        # resample weekly if missing and daily present
+        if weekly_df is None and daily_df is not None:
+            try:
+                weekly_df = daily_df.resample("W").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"})
+            except Exception:
+                weekly_df = None
 
         # compute trends
-        conf["Weekly"] = (trend_from_ema(weekly, 200) or "") + detect_bos(weekly)
-        conf["Daily"] = (trend_from_ema(daily, 200) or "") + detect_bos(daily)
-        conf["H4"] = (trend_from_ema(h4, 50) or "") + detect_bos(h4)
-        conf["H1"] = (trend_from_ema(h1, 20) or "") + detect_bos(h1)
+        try:
+            if weekly_df is not None:
+                t = trend_from_ema(weekly_df, 200)
+                confluence["Weekly"] = (t or "") + detect_bos(weekly_df)
+            if daily_df is not None:
+                t = trend_from_ema(daily_df, 200)
+                confluence["Daily"] = (t or "") + detect_bos(daily_df)
+            if h4_df is not None:
+                t = trend_from_ema(h4_df, 50)
+                fallback = "" if safe_download(symbol, TF_SETTINGS["H4"]["interval"]) is not None else " (no_intraday)"
+                confluence["H4"] = (t or "") + detect_bos(h4_df) + fallback
+            if h1_df is not None:
+                t = trend_from_ema(h1_df, 20)
+                fallback = "" if safe_download(symbol, TF_SETTINGS["H1"]["interval"]) is not None else " (no_intraday)"
+                confluence["H1"] = (t or "") + detect_bos(h1_df) + fallback
+        except Exception as e:
+            log.exception("trend compute error for %s: %s", symbol, e)
 
-        # ---------------------------------------
-        # FIXED: Confluence % calculation
-        # ---------------------------------------
-        valid = [v for v in conf.values() if v.strip() != ""]
-        score = 0
+        used = [v for v in confluence.values() if v and v.strip()]
+        total = len(used)
+        count = sum(1 for v in used if ("Bullish" in v or "Bearish" in v))
+        percent = round((count / total) * 100) if total > 0 else 0
 
-        for v in valid:
-            if "Strong Bullish" in v or "Strong Bearish" in v:
-                score += 3
-            elif "Bullish" in v or "Bearish" in v:
-                score += 2
-            elif "Neutral" in v:
-                score += 1
-
-        max_score = 3 * len(valid)
-        percent = round((score / max_score) * 100) if max_score > 0 else 0
-
-        output.append({
-            "Pair": name,
-            "Symbol": sym,
-            "Confluence": conf,
+        result.append({
+            "Pair": pair_name,
+            "Symbol": symbol,
+            "Confluence": confluence,
             "ConfluencePercent": percent,
-            "Summary": f"{percent}%",
+            "Summary": f"{percent}%" if percent > 0 else "No Confluence"
         })
 
-    return output
+    return result
