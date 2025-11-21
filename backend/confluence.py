@@ -1,9 +1,11 @@
 # confluence.py
 """
-Reliable Confluence Generator for Render
-- Forces yfinance to return valid data using start= instead of period=
-- Uses /tmp cache for safe Render deployment
-- Includes EMA trend + BOS detection
+Fully fixed Confluence Generator — Render-safe.
+✔ Stable Yahoo Finance requests
+✔ No empty DF issues
+✔ MultiIndex column fix
+✔ Strong/normal trend detection
+✔ BOS detection
 """
 
 import os
@@ -12,10 +14,7 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-# -------- FIX 1: FORCE USER-AGENT (prevents empty DF from Yahoo) --------
-yf.shared._default_user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
-
-# -------- FIX 2: SAFE CACHE DIR FOR RENDER --------
+# Force yfinance to use safe temp cache
 os.environ["YFINANCE_CACHE_DIR"] = "/tmp/py-yfinance"
 try:
     os.makedirs("/tmp/py-yfinance", exist_ok=True)
@@ -25,7 +24,7 @@ except Exception:
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("confluence")
 
-# -------- PAIRS --------
+# PAIRS LIST
 PAIRS = [
     {"Pair": "EUR/USD", "Symbol": "EURUSD=X"},
     {"Pair": "GBP/USD", "Symbol": "GBPUSD=X"},
@@ -52,7 +51,7 @@ PAIRS = [
     {"Pair": "Silver", "Symbol": "SI=F"},
 ]
 
-# -------- TIMEFRAME SETTINGS (interval only) --------
+# NEW TIMEFRAME SETTINGS
 TF_SETTINGS = {
     "Weekly": "1wk",
     "Daily": "1d",
@@ -60,50 +59,48 @@ TF_SETTINGS = {
     "H1": "1h",
 }
 
-
-# -------- FIX 3: RELIABLE DOWNLOAD FUNCTION --------
+# ---------- FIXED DOWNLOAD ----------
 def safe_download(symbol, interval):
-    """
-    Uses start= instead of period= to bypass Yahoo restrictions.
-    Always returns full data history so EMA can calculate properly.
-    """
-
     try:
         df = yf.download(
-            symbol,
+            tickers=symbol,
             interval=interval,
-            start="2018-01-01",
+            start="2017-01-01",
             progress=False,
-            threads=False
+            threads=False,
+            timeout=25
         )
 
-        if isinstance(df, pd.DataFrame) and not df.empty:
-            return df
+        # Fix multi-index
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
 
-        log.warning("Empty DF for %s", symbol)
-        return None
+        if df is None or df.empty:
+            log.warning("Empty DF for %s", symbol)
+            return None
+
+        if "Close" not in df:
+            return None
+
+        return df
 
     except Exception as e:
-        log.warning("safe_download failed for %s: %s", symbol, str(e))
+        log.warning("safe_download failed for %s: %s", symbol, e)
         return None
 
-
-# -------- EMA CALCULATION --------
+# ---------- HELPERS ----------
 def compute_ema(series, n):
     try:
         return series.ewm(span=n, adjust=False).mean()
-    except Exception:
+    except:
         return None
 
-
-# -------- TREND LOGIC --------
 def trend_from_ema(df, ema_period, strong_threshold=0.01):
-
-    if df is None or "Close" not in df or df["Close"].empty:
+    if df is None or df.empty or "Close" not in df:
         return None
 
     close = df["Close"].dropna()
-    if len(close) < ema_period + 5:
+    if len(close) < ema_period:
         return None
 
     ema = compute_ema(close, ema_period)
@@ -112,71 +109,60 @@ def trend_from_ema(df, ema_period, strong_threshold=0.01):
 
     last_close = float(close.iloc[-1])
     last_ema = float(ema.iloc[-1])
-    slope = last_ema - float(ema.iloc[-3]) if len(ema) > 3 else 0.0
+    slope = last_ema - float(ema.iloc[-3]) if len(ema) > 3 else 0
 
     if last_close > last_ema * (1 + strong_threshold) and slope > 0:
         return "Strong Bullish"
     if last_close < last_ema * (1 - strong_threshold) and slope < 0:
         return "Strong Bearish"
-    if last_close > last_ema:
+    if last_close > last_ema and slope >= 0:
         return "Bullish"
-    if last_close < last_ema:
+    if last_close < last_ema and slope <= 0:
         return "Bearish"
 
     return "Neutral"
 
-
-# -------- BOS DETECTION --------
-def detect_bos(df):
-    try:
-        highs = df["High"].dropna()
-        lows = df["Low"].dropna()
-
-        bos = ""
-        if len(highs) >= 3 and highs.iloc[-1] > highs.iloc[-2] > highs.iloc[-3]:
-            bos = " (BOS_up)"
-        if len(lows) >= 3 and lows.iloc[-1] < lows.iloc[-2] < lows.iloc[-3]:
-            bos = " (BOS_down)"
-
-        return bos
-
-    except Exception:
-        return ""
-
-
-# -------- FINAL CONFLUENCE CALC --------
+# ---------- MAIN ----------
 def get_confluence():
-
     results = []
 
     for item in PAIRS:
         symbol = item["Symbol"]
-        name = item["Pair"]
+        pair_name = item["Pair"]
 
         confluence = {"Weekly": "", "Daily": "", "H4": "", "H1": ""}
 
         for tf, interval in TF_SETTINGS.items():
-
             df = safe_download(symbol, interval)
             if df is None:
+                confluence[tf] = ""
                 continue
 
-            # EMA settings
             ema_period = 200 if tf in ("Weekly", "Daily") else (50 if tf == "H4" else 20)
+            trend = trend_from_ema(df, ema_period)
 
-            trend = trend_from_ema(df, ema_period) or ""
-            bos = detect_bos(df)
+            bos = ""
+            try:
+                highs = df["High"].dropna()
+                lows = df["Low"].dropna()
 
-            confluence[tf] = trend + bos
+                if len(highs) > 3 and highs.iloc[-1] > highs.iloc[-2] > highs.iloc[-3]:
+                    bos = " (BOS_up)"
+                if len(lows) > 3 and lows.iloc[-1] < lows.iloc[-2] < lows.iloc[-3]:
+                    bos = " (BOS_down)"
+
+            except:
+                pass
+
+            confluence[tf] = (trend or "") + bos
 
         used = [v for v in confluence.values() if v]
         total = len(used)
         count = sum(1 for v in used if ("Bullish" in v or "Bearish" in v))
-
         percent = round((count / total) * 100) if total > 0 else 0
 
         results.append({
-            "Pair": name,
+            "Pair": pair_name,
             "Symbol": symbol,
             "Confluence": confluence,
             "ConfluencePercent": percent,
