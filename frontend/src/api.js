@@ -1,8 +1,16 @@
-// Frontend API wrapper
-const API = (path) => {
-  // For local dev use http://localhost:5000, on Render it will be same origin if backend served there.
-  const base = import.meta.env.VITE_API_URL || "";
-  return fetch(base + path).then(r => r.json());
-};
+// src/api.js
 
-export const API_URL = "https://backend-qxff.onrender.com"
+const BASE_URL = "https://backend-qxff.onrender.com";
+
+export async function fetchConfluence() {
+  try {
+    const response = await fetch(`${BASE_URL}/confluence`);
+    if (!response.ok) {
+      throw new Error("Failed to fetch confluence data");
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("fetchConfluence error:", error);
+    return [];
+  }
+}
