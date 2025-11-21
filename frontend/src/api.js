@@ -1,22 +1,21 @@
-export const fetchConfluence = async () => {
-  try {
-    const res = await fetch("https://backend-qxff.onrender.com/confluence");
-    const data = await res.json();
+// src/api.js
 
-    // Convert LIST → DICTIONARY keyed by Pair
-    const mapped = {};
-    data.forEach(item => {
-      mapped[item.Pair] = {
-        Confluence: item.Confluence,
-        ConfluencePercent: item.ConfluencePercent,
-        Summary: item.Summary
-      };
+const API_BASE = "https://backend-qxff.onrender.com";
+
+export async function fetchConfluence() {
+  try {
+    const res = await fetch(`${API_BASE}/confluence`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" }
     });
 
-    return mapped;
+    if (!res.ok) {
+      throw new Error(`Backend error: ${res.status}`);
+    }
 
+    return await res.json();
   } catch (err) {
-    console.error("fetch error:", err);
-    return {};
+    console.error("fetchConfluence ERROR:", err);
+    return null;
   }
-};
+}
