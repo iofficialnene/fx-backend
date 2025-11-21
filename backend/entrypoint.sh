@@ -1,5 +1,15 @@
-#!/bin/sh
+#!/usr/bin/env sh
+set -e
+
 # entrypoint.sh
-# Use the PORT env var (Render sets $PORT)
+# Render/Heroku-compatible entry script
+# Ensures PORT is set (Render provides this automatically)
 : "${PORT:=5000}"
-exec gunicorn app:app --bind 0.0.0.0:"$PORT" --workers 3 --timeout 60
+
+echo "Starting Gunicorn on port $PORT..."
+
+# --preload reduces worker memory usage
+# --worker-tmp-dir avoids read-only FS issues
+exec gunicorn app:app \
+  --bind "0.0.0.0:${PORT}" \
+  --workers
