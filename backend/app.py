@@ -1,24 +1,32 @@
+# app.py
 import os
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 from confluence import get_confluence
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="frontend", static_url_path="/")
 CORS(app)
 
 @app.route("/confluence")
 def confluence_data():
     try:
-        return jsonify(get_confluence())
+        data = get_confluence()
+        return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# serve frontend files if you copy frontend build into backend/frontend (optional)
 @app.route("/")
-def home():
-    return {"status": "Backend running"}
+def serve_index():
+    try:
+        return send_from_directory(app.static_folder, "index.html")
+    except Exception:
+        return jsonify({"message": "FX Confluence backend online", "status": "running"})
+
+@app.route("/<path:path>")
+def serve_static(path):
+    return send_from_directory(app.static_folder, path)
 
 if __name__ == "__main__":
-    port = os.environ.get("PORT")
-    if port is None or not port.isdigit():
-        port = 5000  # fallback for local testing
-    app.run(host="0.0.0.0", port=int(port))
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
