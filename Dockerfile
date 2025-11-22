@@ -5,12 +5,10 @@ FROM node:18-alpine AS frontend-builder
 
 WORKDIR /frontend
 
-# Copy frontend package files (go up one level to find frontend folder)
-COPY ../frontend/package*.json ./
+COPY frontend/package*.json ./
 RUN npm install
 
-# Copy frontend source and build
-COPY ../frontend/ ./
+COPY frontend/ ./
 RUN npm run build
 
 # ============================================
@@ -20,32 +18,24 @@ FROM python:3.11-slim
 
 WORKDIR /usr/src/app
 
-# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy and install Python dependencies
-COPY requirements.txt ./
+COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Clean up build tools
 RUN apt-get purge -y --auto-remove build-essential gcc
 
-# Copy backend code
-COPY app.py confluence.py ./
+COPY backend/app.py backend/confluence.py ./
 
-# Copy built frontend from stage 1
 COPY --from=frontend-builder /frontend/dist ./frontend/dist
 
-# Environment for yfinance
 ENV YFINANCE_CACHE_DIR=/tmp/py-yfinance
 RUN mkdir -p /tmp/py-yfinance && chmod -R 777 /tmp/py-yfinance
 
-# Expose port
 EXPOSE 5000
 
-# Run with gunicorn
 CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:5000", "--workers", "3", "--timeout", "120"]
