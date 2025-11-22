@@ -11,6 +11,7 @@ Features:
 - Daily -> intraday resample fallback for H4/H1
 - Simple in-memory caching (TTL) to prevent repeated heavy downloads
 - Defensive output shape for frontend compatibility
+- User-Agent header to bypass Yahoo Finance blocking
 """
 
 import os
@@ -29,6 +30,11 @@ from typing import Optional, Dict, Any, List, Tuple
 import numpy as np
 import pandas as pd
 import yfinance as yf
+
+# Set user agent to avoid Yahoo Finance blocking
+yf.utils.user_agent_headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+}
 
 # ---- Logging ----
 logging.basicConfig(level=logging.INFO)
