@@ -5,12 +5,12 @@ FROM node:18-alpine AS frontend-builder
 
 WORKDIR /frontend
 
-# Copy frontend package files
-COPY frontend/package*.json ./
+# Copy frontend package files (go up one level to find frontend folder)
+COPY ../frontend/package*.json ./
 RUN npm install
 
 # Copy frontend source and build
-COPY frontend/ ./
+COPY ../frontend/ ./
 RUN npm run build
 
 # ============================================
