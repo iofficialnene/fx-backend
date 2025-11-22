@@ -7,7 +7,7 @@ from confluence import get_confluence
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Path to built frontend (adjust if needed)
+# Path to built frontend
 FRONTEND_DIST = os.path.join(BASE_DIR, "frontend", "dist")
 
 app = Flask(
@@ -16,23 +16,21 @@ app = Flask(
     static_url_path="/"
 )
 
-# Allow all domains to call /confluence
+# Allow all domains to hit /confluence
 CORS(app, resources={r"/confluence": {"origins": "*"}})
 
-
 # -----------------------------------------------------
-# GET CONFLUENCE DATA (MAIN API)
+# MAIN CONFLUENCE API
 # -----------------------------------------------------
 @app.route("/confluence")
 def confluence_route():
     try:
         data = get_confluence()
 
-        # FAILSAFE: if function returns None or empty, warn frontend
         if not data:
             return jsonify({
                 "error": "No confluence data returned",
-                "data": data
+                "data": data,
             }), 500
 
         return jsonify(data)
@@ -42,7 +40,7 @@ def confluence_route():
         return jsonify({
             "error": "Backend crashed inside get_confluence",
             "detail": str(e),
-            "trace": traceback.format_exc()
+            "trace": traceback.format_exc(),
         }), 500
 
 
@@ -53,11 +51,18 @@ def confluence_route():
 def health():
     return jsonify({
         "status": "ok",
-        "port": str(os.environ.get("PORT", "no-port"))
+        "port": str(os.environ.get("PORT", "no-port")),
     })
 
 
 # -----------------------------------------------------
-# SERVE FRONTEND (VITE/REACT)
+# SERVE REACT/VITE FRONTEND
 # -----------------------------------------------------
-@app.route("/", defaults={
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_frontend(path):
+    """
+    Serves files from /frontend/dist.
+    If the file doesn't exist, return index.html (SPA mode).
+    """
+    fu
