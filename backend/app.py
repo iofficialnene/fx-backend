@@ -154,4 +154,7 @@ def serve_frontend(path):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    print(f"Starting Flask a
+    print(f"Starting Flask app on port {port}")
+    print(f"Frontend dist path: {FRONTEND_DIST}")
+    print(f"Frontend dist exists: {os.path.exists(FRONTEND_DIST)}")
+    app.run(host="0.0.0.0", port=port, debug=False)
