@@ -1,7 +1,10 @@
 """
-backend/confluence.py - Twelve Data API Version
+backend/confluence.py - Alpha Vantage API Version
 
-Uses Twelve Data API instead of Yahoo Finance for reliable cloud server access.
+Uses Alpha Vantage API with smart rate limiting for free tier:
+- 25 API calls per day
+- 5 calls per minute
+- 30-minute cache to minimize API usage
 """
 
 import os
@@ -15,44 +18,57 @@ import numpy as np
 import pandas as pd
 
 # Get API key from environment
-TWELVEDATA_API_KEY = os.environ.get("TWELVEDATA_API_KEY", "")
+ALPHAVANTAGE_API_KEY = os.environ.get("ALPHAVANTAGE_API_KEY", "")
 
 # Logging
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("confluence")
 
-# Forex pairs mapping (Twelve Data format)
+# Forex pairs
 PAIRS = [
-    {"Pair": "EUR/USD", "Symbol": "EUR/USD"},
-    {"Pair": "GBP/USD", "Symbol": "GBP/USD"},
-    {"Pair": "USD/JPY", "Symbol": "USD/JPY"},
-    {"Pair": "USD/CHF", "Symbol": "USD/CHF"},
-    {"Pair": "AUD/USD", "Symbol": "AUD/USD"},
-    {"Pair": "NZD/USD", "Symbol": "NZD/USD"},
-    {"Pair": "USD/CAD", "Symbol": "USD/CAD"},
-    {"Pair": "EUR/GBP", "Symbol": "EUR/GBP"},
-    {"Pair": "EUR/JPY", "Symbol": "EUR/JPY"},
-    {"Pair": "GBP/JPY", "Symbol": "GBP/JPY"},
-    {"Pair": "AUD/JPY", "Symbol": "AUD/JPY"},
-    {"Pair": "AUD/NZD", "Symbol": "AUD/NZD"},
-    {"Pair": "CHF/JPY", "Symbol": "CHF/JPY"},
+    {"Pair": "EUR/USD", "Symbol": "EURUSD"},
+    {"Pair": "GBP/USD", "Symbol": "GBPUSD"},
+    {"Pair": "USD/JPY", "Symbol": "USDJPY"},
+    {"Pair": "USD/CHF", "Symbol": "USDCHF"},
+    {"Pair": "AUD/USD", "Symbol": "AUDUSD"},
+    {"Pair": "NZD/USD", "Symbol": "NZDUSD"},
+    {"Pair": "USD/CAD", "Symbol": "USDCAD"},
+    {"Pair": "EUR/GBP", "Symbol": "EURGBP"},
+    {"Pair": "EUR/JPY", "Symbol": "EURJPY"},
+    {"Pair": "GBP/JPY", "Symbol": "GBPJPY"},
+    {"Pair": "AUD/JPY", "Symbol": "AUDJPY"},
+    {"Pair": "AUD/NZD", "Symbol": "AUDNZD"},
+    {"Pair": "CHF/JPY", "Symbol": "CHFJPY"},
 ]
 
-# Timeframe settings
+# Timeframes - Alpha Vantage only supports daily, weekly, monthly
 TF_SETTINGS = {
-    "Weekly": {"interval": "1week", "outputsize": 104},
-    "Daily": {"interval": "1day", "outputsize": 365},
-    "H4": {"interval": "4h", "outputsize": 360},
-    "H1": {"interval": "1h", "outputsize": 336},
+    "Weekly": {"function": "FX_WEEKLY", "interval": None},
+    "Daily": {"function": "FX_DAILY", "interval": None},
 }
 
-# Cache
+# Cache - 30 minutes to save API calls
 CACHE: Dict[Tuple[str, str], Tuple[float, Optional[pd.DataFrame]]] = {}
-CACHE_TTL = 300  # 5 minutes
+CACHE_TTL = 1800  # 30 minutes
 
-def _fetch_twelvedata(symbol: str, interval: str, outputsize: int = 100) -> Optional[pd.DataFrame]:
-    """Fetch data from Twelve Data API"""
-    key = (symbol, interval)
+# Rate limiting
+LAST_REQUEST_TIME = 0
+MIN_REQUEST_INTERVAL = 13  # 13 seconds between requests = ~4.6 per minute (safe for 5/min limit)
+
+def _rate_limit():
+    """Ensure we don't exceed 5 API calls per minute"""
+    global LAST_REQUEST_TIME
+    now = time.time()
+    time_since_last = now - LAST_REQUEST_TIME
+    if time_since_last < MIN_REQUEST_INTERVAL:
+        sleep_time = MIN_REQUEST_INTERVAL - time_since_last
+        log.info(f"Rate limiting: sleeping {sleep_time:.1f}s")
+        time.sleep(sleep_time)
+    LAST_REQUEST_TIME = time.time()
+
+def _fetch_alphavantage(symbol: str, function: str) -> Optional[pd.DataFrame]:
+    """Fetch data from Alpha Vantage API"""
+    key = (symbol, function)
     now = time.time()
     
     # Check cache
@@ -60,64 +76,92 @@ def _fetch_twelvedata(symbol: str, interval: str, outputsize: int = 100) -> Opti
     if cached:
         ts, df = cached
         if now - ts < CACHE_TTL:
-            log.debug(f"CACHE HIT {symbol} {interval}")
+            log.info(f"CACHE HIT {symbol} {function}")
             return df
     
-    if not TWELVEDATA_API_KEY:
-        log.error("TWELVEDATA_API_KEY not set!")
+    if not ALPHAVANTAGE_API_KEY:
+        log.error("ALPHAVANTAGE_API_KEY not set!")
         return None
     
     try:
-        url = "https://api.twelvedata.com/time_series"
+        # Rate limit
+        _rate_limit()
+        
+        url = "https://www.alphavantage.co/query"
         params = {
-            "symbol": symbol,
-            "interval": interval,
-            "outputsize": outputsize,
-            "apikey": TWELVEDATA_API_KEY,
-            "format": "JSON"
+            "function": function,
+            "from_symbol": symbol[:3],
+            "to_symbol": symbol[3:],
+            "apikey": ALPHAVANTAGE_API_KEY,
+            "outputsize": "full"
         }
         
-        log.info(f"Fetching {symbol} {interval}")
+        log.info(f"Fetching {symbol} {function}")
         response = requests.get(url, params=params, timeout=30)
         
         if response.status_code != 200:
-            log.error(f"API error {response.status_code}: {response.text}")
+            log.error(f"API error {response.status_code}")
             return None
         
         data = response.json()
         
-        if "values" not in data:
-            log.error(f"No values in response: {data}")
+        # Check for API limit message
+        if "Note" in data:
+            log.error(f"API limit hit: {data['Note']}")
+            return None
+        
+        if "Error Message" in data:
+            log.error(f"API error: {data['Error Message']}")
+            return None
+        
+        # Get time series data
+        if function == "FX_DAILY":
+            time_series_key = "Time Series FX (Daily)"
+        elif function == "FX_WEEKLY":
+            time_series_key = "Time Series FX (Weekly)"
+        else:
+            log.error(f"Unknown function: {function}")
+            return None
+        
+        if time_series_key not in data:
+            log.error(f"No {time_series_key} in response")
+            return None
+        
+        time_series = data[time_series_key]
+        
+        if not time_series:
+            log.warning(f"Empty time series for {symbol} {function}")
             return None
         
         # Convert to DataFrame
-        df = pd.DataFrame(data["values"])
+        df = pd.DataFrame.from_dict(time_series, orient='index')
         
         if df.empty:
-            log.warning(f"Empty data for {symbol} {interval}")
             return None
         
-        # Convert columns
-        df["datetime"] = pd.to_datetime(df["datetime"])
-        df = df.set_index("datetime").sort_index()
+        # Convert index to datetime
+        df.index = pd.to_datetime(df.index)
+        df = df.sort_index()
         
-        for col in ["open", "high", "low", "close"]:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-        
-        # Rename to standard names
+        # Rename columns
         df = df.rename(columns={
-            "open": "Open",
-            "high": "High",
-            "low": "Low",
-            "close": "Close"
+            '1. open': 'Open',
+            '2. high': 'High',
+            '3. low': 'Low',
+            '4. close': 'Close'
         })
+        
+        # Convert to numeric
+        for col in ['Open', 'High', 'Low', 'Close']:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
         
         # Cache and return
         CACHE[key] = (now, df)
+        log.info(f"Successfully fetched {len(df)} rows for {symbol} {function}")
         return df
         
     except Exception as e:
-        log.exception(f"Error fetching {symbol} {interval}: {e}")
+        log.exception(f"Error fetching {symbol} {function}: {e}")
         return None
 
 def _ema(series: pd.Series, span: int) -> pd.Series:
@@ -243,12 +287,8 @@ def _analyze_tf(df: pd.DataFrame, tf: str) -> Dict[str, Any]:
         atr_val = float(atr_ser.iloc[-1]) if atr_ser is not None and not atr_ser.empty else None
         out["atr"] = atr_val
         
-        if tf in ("Weekly", "Daily"):
-            ema_period = 200
-        elif tf == "H4":
-            ema_period = 50
-        else:
-            ema_period = 20
+        # Use 200 EMA for both Weekly and Daily
+        ema_period = 200
         
         ema_series = _ema(close, ema_period)
         if ema_series is None or ema_series.empty:
@@ -291,15 +331,15 @@ def _compute_for_symbol(symbol: str) -> Dict[str, Any]:
     try:
         dfs = {}
         
-        # Fetch all timeframes
+        # Fetch timeframes (only Daily and Weekly available)
         for tf, settings in TF_SETTINGS.items():
-            df = _fetch_twelvedata(symbol, settings["interval"], settings["outputsize"])
+            df = _fetch_alphavantage(symbol, settings["function"])
             dfs[tf] = df
-            time.sleep(0.5)  # Rate limit friendly
         
         results = {}
         details = {}
         
+        # Analyze available timeframes
         for tf in TF_SETTINGS.keys():
             df = dfs.get(tf)
             analysis = _analyze_tf(df, tf)
@@ -307,8 +347,16 @@ def _compute_for_symbol(symbol: str) -> Dict[str, Any]:
             results[tf] = label
             details[tf] = analysis
         
+        # Add placeholders for H4 and H1 (not available in Alpha Vantage free tier)
+        results["H4"] = "Not Available"
+        results["H1"] = "Not Available"
+        details["H4"] = {"label": "Not Available"}
+        details["H1"] = {"label": "Not Available"}
+        
+        # Calculate confluence from available timeframes only
         dir_flags = []
-        for tf, d in details.items():
+        for tf in ["Weekly", "Daily"]:  # Only use these for confluence
+            d = details.get(tf, {})
             tl = (d.get("trend_label") or "").lower()
             if "bull" in tl:
                 dir_flags.append("bull")
@@ -343,13 +391,14 @@ def _compute_for_symbol(symbol: str) -> Dict[str, Any]:
         log.exception(f"Error computing {symbol}")
         return {
             "Symbol": symbol,
-            "Confluence": {tf: "No Data" for tf in TF_SETTINGS.keys()},
+            "Confluence": {tf: "No Data" for tf in ["Weekly", "Daily", "H4", "H1"]},
             "ConfluencePercent": 0,
             "Summary": "No Confluence",
             "Details": {}
         }
 
 def get_confluence() -> List[Dict[str, Any]]:
+    log.info("Starting confluence fetch - this will take ~3-4 minutes due to rate limiting")
     out = []
     for p in PAIRS:
         sym = p["Symbol"]
@@ -358,4 +407,5 @@ def get_confluence() -> List[Dict[str, Any]]:
         res = _compute_for_symbol(sym)
         res["Pair"] = pair_label
         out.append(res)
+    log.info(f"Completed fetching {len(out)} pairs")
     return out
